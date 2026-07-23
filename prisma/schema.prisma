@@ -11,3 +11,30 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+//enum
+enum Role {
+  CANDIDATE
+  RECRUITER
+  ADMIN
+}
+enum UserStatus {
+  PENDING
+  ACTIVE
+  BLOCKED
+}
+
+//User table
+model User {
+  id          Int         @id @default(autoincrement())
+  email       String      @unique
+  password    String
+  fullname    String      @map("full_name")
+  refreshTokenHash String?     @map("refresh_token_hash")
+  role        Role        @default(CANDIDATE)
+  status      UserStatus  @default(PENDING)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  // profile     Profile?
+  // applications Application[]
+  @@map("users")
+}
