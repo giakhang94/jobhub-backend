@@ -7,7 +7,7 @@ import {
   IsOptional,
   IsUrl,
 } from 'class-validator';
-import { Role } from 'generated/prisma/client.js';
+import { Role } from '../../../generated/prisma/enums.js';
 
 export class CreateUserDto {
   @IsEmail({}, { message: 'Email không đúng định dạng' })
