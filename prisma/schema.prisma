@@ -29,6 +29,12 @@ model User {
   email       String      @unique
   password    String
   fullname    String      @map("full_name")
+  avatar     String?
+
+  //for various verification and authentication purposes
+  emailVerificationToken String?     @map("email_verification_token")
+  emailVerificationTokenExpiry DateTime? @map("email_verification_token_expiry")
+  
   refreshTokenHash String?     @map("refresh_token_hash")
   role        Role        @default(CANDIDATE)
   status      UserStatus  @default(PENDING)
