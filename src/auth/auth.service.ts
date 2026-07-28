@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
 
 import { CreateUserDto } from './dtos/create-user.dto.js';
 import * as bcrypt from 'bcrypt';
@@ -6,6 +10,10 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import * as crypto from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { MailService } from '../mail/mail.service.js';
+import { Response } from 'express';
+import type { JwtUser } from './interfaces/jwt-user.interface.js';
+import { JwtService } from '@nestjs/jwt';
+import { attachCookie } from './utils/attackCookie.js';
 
 @Injectable()
 export class AuthService {
@@ -13,6 +21,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly mailService: MailService,
+    private readonly jwtService: JwtService,
   ) {}
 
   //create a new user
@@ -88,5 +97,57 @@ export class AuthService {
       return null;
     }
     return user;
+  }
+
+  //login
+  async login(user: JwtUser, res: Response) {
+    const payload = { sub: user.id, role: user.role, email: user.email };
+    const accessToken = await this.jwtService.signAsync(payload);
+    const refreshToken = await this.jwtService.signAsync(payload, {
+      secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
+      expiresIn: this.configService.getOrThrow('JWT_REFRESH_EXPIRES_IN'),
+    });
+    try {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          refreshTokenHash: refreshToken,
+        },
+      });
+      attachCookie(
+        res,
+        'accessToken',
+        accessToken,
+        this.configService.getOrThrow('JWT_EXPIRES_IN'),
+        this.configService,
+      );
+      attachCookie(
+        res,
+        'refreshToken',
+        refreshToken,
+        this.configService.getOrThrow('JWT_REFRESH_EXPIRES_IN'),
+        this.configService,
+      );
+    } catch (error: any) {
+      console.log(error);
+      throw new InternalServerErrorException(
+        'something went wrong, please try again in a few minutes',
+      );
+    }
+
+    return { message: 'login thanh cong' };
+  }
+  //refresh token
+  async refreshToken(user: JwtUser, res: Response) {
+    const payload = { sub: user.id, email: user.email, role: user.role };
+    const accessToken = await this.jwtService.signAsync(payload);
+    attachCookie(
+      res,
+      'accessToken',
+      accessToken,
+      this.configService.getOrThrow('JWT_EXPIRES_IN'),
+      this.configService,
+    );
+    return { message: 'access token has been refreshed successfully' };
   }
 }
