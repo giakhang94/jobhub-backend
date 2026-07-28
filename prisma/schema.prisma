@@ -23,6 +23,18 @@ enum UserStatus {
   BLOCKED
 }
 
+//enum for post table
+enum PostStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum FileType {
+    IMAGE
+    DOCUMENT
+}
+
 //User table
 model User {
   id          Int         @id @default(autoincrement())
@@ -42,5 +54,56 @@ model User {
   updatedAt   DateTime    @updatedAt
   // profile     Profile?
   // applications Application[]
+
+  //keys
+  posts Post[]
+  uploadedFiles File[] @relation("UserUploadedFiles")
   @@map("users")
+}
+
+model Category {
+  id Int @id @default(autoincrement())
+  name String @unique
+  posts Post[]
+}
+
+model Post {
+  id Int @id @default(autoincrement())
+  title String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  slug String @db.Text
+  status PostStatus @default(PUBLISHED)
+  viewCount Int @default(0)
+
+  //Foreign Keys
+  createdById Int
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  categoryId Int
+  category Category @relation(fields: [categoryId], references: [id])
+
+  //1-N relationships
+  files File[] @relation("PostBelongsFiles")
+
+}
+
+model File {
+  id Int @id @default(autoincrement())
+  url String
+  publicId String? //Id file on Cloud (use for deleting file if needed)
+  originalName String //original name of this file
+  mimeType String //'image/png' or 'application/pdf'
+  fileType  FileType //IMAGE hoac Document
+
+  //foreign key
+  //file links with user who upload it
+  uploaderId Int
+  uploader User @relation("UserUploadedFiles", fields: [uploaderId], references: [id], onDelete: Cascade)
+
+  //which post that the files belong with
+  postId Int?
+  post Post? @relation("PostBelongsFiles", fields: [postId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
 }
