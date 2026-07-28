@@ -10,6 +10,7 @@ import { Strategy } from 'passport-jwt';
 import { JwtPayload } from './Jwt.strategy.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { UserStatus } from '../../../generated/prisma/enums.js';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class JwtRefreshStrategy extends PassportStrategy(
@@ -63,7 +64,10 @@ export class JwtRefreshStrategy extends PassportStrategy(
       throw new UnauthorizedException(
         'user is not activated or has been blocked',
       );
-    if (user.refreshTokenHash !== req?.cookies.refreshToken)
+    const isMatchToken =
+      user.refreshTokenHash &&
+      bcrypt.compare(req?.cookies.refreshToken, user.refreshTokenHash!);
+    if (!isMatchToken)
       throw new UnauthorizedException('Invalid or revoked refresh token');
     return user;
   }

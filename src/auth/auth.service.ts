@@ -111,7 +111,7 @@ export class AuthService {
       await this.prisma.user.update({
         where: { id: user.id },
         data: {
-          refreshTokenHash: refreshToken,
+          refreshTokenHash: await bcrypt.hash(refreshToken, 10),
         },
       });
       attachCookie(
