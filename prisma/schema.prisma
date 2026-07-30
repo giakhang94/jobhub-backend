@@ -35,6 +35,12 @@ enum FileType {
     DOCUMENT
 }
 
+enum Privacy {
+  FOLLOWER
+  PUBLIC
+  PRIVATE
+}
+
 //User table
 model User {
   id          Int         @id @default(autoincrement())
@@ -76,6 +82,7 @@ model Post {
   status PostStatus @default(PUBLISHED)
   viewCount Int @default(0)
   content String @db.Text
+  privacy Privacy @default(PUBLIC)
 
   //Foreign Keys
   createdById Int
