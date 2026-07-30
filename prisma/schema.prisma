@@ -75,6 +75,7 @@ model Post {
   slug String @db.Text
   status PostStatus @default(PUBLISHED)
   viewCount Int @default(0)
+  content String @db.Text
 
   //Foreign Keys
   createdById Int

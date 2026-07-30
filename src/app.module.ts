@@ -7,6 +7,8 @@ import { AuthModule } from './auth/auth.module.js';
 import { ConfigModule } from '@nestjs/config';
 import { MailModule } from './mail/mail.module.js';
 import { PostsModule } from './posts/posts.module.js';
+import { FileModule } from './file/file.module.js';
+import { CloudinaryModule } from './cloudinary/cloudinary.module.js';
 
 @Module({
   imports: [
@@ -16,6 +18,8 @@ import { PostsModule } from './posts/posts.module.js';
     ConfigModule.forRoot({ isGlobal: true }),
     MailModule,
     PostsModule,
+    FileModule,
+    CloudinaryModule,
   ],
   controllers: [AppController],
   providers: [AppService],

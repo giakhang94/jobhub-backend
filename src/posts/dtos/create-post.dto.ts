@@ -52,9 +52,4 @@ export class CreatePostDto {
   @IsInt({ message: 'categoryId phải là số nguyên' })
   @IsNotEmpty({ message: 'Danh mục bài viết là bắt buộc' })
   categoryId!: number;
-
-  // Mảng file đính kèm (nếu bài viết có upload ảnh hoặc file PDF)
-  @IsArray()
-  @IsOptional()
-  files?: FileAttachmentDto[];
 }
