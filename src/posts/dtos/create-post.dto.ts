@@ -7,7 +7,11 @@ import {
   IsArray,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { FileType, PostStatus } from '../../../generated/prisma/enums.js';
+import {
+  FileType,
+  PostStatus,
+  Privacy,
+} from '../../../generated/prisma/enums.js';
 
 // Class phụ để validate thông tin các file đính kèm (nếu có)
 class FileAttachmentDto {
@@ -52,4 +56,8 @@ export class CreatePostDto {
   @IsInt({ message: 'categoryId phải là số nguyên' })
   @IsNotEmpty({ message: 'Danh mục bài viết là bắt buộc' })
   categoryId!: number;
+
+  @IsOptional()
+  @IsEnum(Privacy)
+  privacy?: Privacy;
 }

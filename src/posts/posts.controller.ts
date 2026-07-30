@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   Post,
   UploadedFiles,
   UseGuards,
@@ -26,5 +27,12 @@ export class PostsController {
     @UploadedFiles() files: Express.Multer.File[],
   ) {
     return this.postsService.createPost(user, body, files);
+  }
+
+  //get all posts with pagination
+  @Get()
+  @UseGuards(JwtAuthGuard)
+  async getAllPosts(@GetUser() user: JwtUser) {
+    return this.postsService.getAllPosts(user);
   }
 }

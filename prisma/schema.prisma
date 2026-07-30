@@ -65,6 +65,10 @@ model User {
   posts Post[]
   uploadedFiles File[] @relation("UserUploadedFiles")
   @@map("users")
+
+  //N-N relations
+  followers Follow[] @relation("MyFollowers") //my followers
+  following Follow[] @relation("MyFollowings") //my followings
 }
 
 model Category {
@@ -114,4 +118,15 @@ model File {
   post Post? @relation("PostBelongsFiles", fields: [postId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
+}
+
+model Follow {
+  followerId Int //id of users who click follow others
+  followingId Int //id of users who have been followed by others
+
+  //khoa ngoai
+  follower User @relation("MyFollowers", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("MyFollowings", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId]) //the primary key includes 2 columns to avoid duplication
 }

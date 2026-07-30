@@ -73,4 +73,6 @@ export class PostsService {
       );
     }
   }
+  //get all posts
+  async getAllPosts(user: JwtUser) {}
 }
