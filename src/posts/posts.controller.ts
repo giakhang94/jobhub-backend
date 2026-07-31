@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Post,
+  Query,
   UploadedFiles,
   UseGuards,
   UseInterceptors,
@@ -32,7 +33,24 @@ export class PostsController {
   //get all posts with pagination
   @Get()
   @UseGuards(JwtAuthGuard)
-  async getAllPosts(@GetUser() user: JwtUser) {
-    return this.postsService.getAllPosts(user);
+  async getAllPosts(@GetUser() user: JwtUser, @Query() query: any) {
+    const { page, limit } = query;
+    return this.postsService.getAllPosts(
+      user,
+      Number(page) || 1,
+      Number(limit) || 10,
+    );
+  }
+
+  //get all public posts with pagination for guesses
+  @Get('guess')
+  async getAllPublicPostsForGuess(
+    @Query('page') page = '1',
+    @Query('limit') limit = '10',
+  ) {
+    return this.postsService.getAllPublicPostsForGuess(
+      Number(page),
+      Number(limit),
+    );
   }
 }

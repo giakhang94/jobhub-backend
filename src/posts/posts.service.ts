@@ -75,7 +75,8 @@ export class PostsService {
     }
   }
   //get all posts
-  async getAllPosts(user: JwtUser) {
+  async getAllPosts(user: JwtUser, page = 1, limit = 10) {
+    const skip = limit * (page - 1);
     //for admin
     if (user && user.role === 'ADMIN') {
       return this.prismaService.post.findMany({
@@ -84,7 +85,9 @@ export class PostsService {
           category: true,
           createdBy: true,
         },
-        orderBy: { id: 'desc' },
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
       });
     }
 
@@ -118,8 +121,40 @@ export class PostsService {
       include: {
         category: true,
         files: true,
+        createdBy: true,
       },
       orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
     });
+    const total = post.length;
+    return {
+      data: post,
+      meta: {
+        total: total,
+        page,
+        limit,
+        totalPage: Math.ceil(total / limit),
+      },
+    };
+  }
+  //get posts for guess (only public posts)
+  async getAllPublicPostsForGuess(page: number, limit: number) {
+    const whereCondition = { privacy: Privacy.PUBLIC };
+    const skip = (page - 1) * limit;
+    const [posts, total] = await Promise.all([
+      this.prismaService.post.findMany({
+        where: whereCondition,
+        include: { files: true, category: true, createdByID: true },
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prismaService.post.count({ where: whereCondition }),
+    ]);
+    return {
+      data: posts,
+      meta: { total, page, limit, totalPage: Math.ceil(total / limit) },
+    };
   }
 }
