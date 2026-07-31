@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Param,
   Post,
   Query,
   UploadedFiles,
@@ -52,5 +53,12 @@ export class PostsController {
       Number(page),
       Number(limit),
     );
+  }
+
+  //get post by ID
+  @Get('/:id')
+  @UseGuards(JwtAuthGuard)
+  async getPostById(@GetUser() user: JwtUser, @Param('id') id: string) {
+    return this.postsService.getPostById(user, Number(id));
   }
 }

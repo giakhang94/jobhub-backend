@@ -2,12 +2,15 @@ import { JwtUser } from '../auth/interfaces/jwt-user.interface.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { CreatePostDto } from './dtos/create-post.dto.js';
 import { FileService } from '../file/file.service.js';
-import { Privacy } from '../../generated/prisma/enums.js';
+import { Privacy, Role } from '../../generated/prisma/enums.js';
 
 @Injectable()
 export class PostsService {
@@ -156,5 +159,36 @@ export class PostsService {
       data: posts,
       meta: { total, page, limit, totalPage: Math.ceil(total / limit) },
     };
+  }
+  //get post by id
+  async getPostById(user: JwtUser, id: number) {
+    const role = user.role;
+    const userId = Number(user.id);
+    const post = await this.prismaService.post.findUnique({
+      where: { id },
+      include: { files: true, createdBy: true, category: true },
+    });
+    if (!post) throw new NotFoundException('Post not found');
+    if (
+      post.privacy === Privacy.PUBLIC ||
+      role === Role.ADMIN ||
+      userId === post.createdById
+    )
+      return post;
+    if (post.privacy === Privacy.PRIVATE) {
+      throw new ForbiddenException('You can not see this post');
+    }
+    const userFollowsCreator = await this.prismaService.follow.findUnique({
+      where: {
+        followerId_followingId: {
+          followerId: userId,
+          followingId: post.createdById,
+        },
+      },
+    });
+    if (userFollowsCreator) {
+      return post;
+    }
+    throw new ForbiddenException('You can not see this post');
   }
 }
