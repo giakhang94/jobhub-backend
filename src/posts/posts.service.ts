@@ -145,7 +145,7 @@ export class PostsService {
     const [posts, total] = await Promise.all([
       this.prismaService.post.findMany({
         where: whereCondition,
-        include: { files: true, category: true, createdByID: true },
+        include: { files: true, category: true, createdBy: true },
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
