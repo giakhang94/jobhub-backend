@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { CreatePostDto } from './dtos/create-post.dto.js';
 import { FileService } from '../file/file.service.js';
+import { Privacy } from '../../generated/prisma/enums.js';
 
 @Injectable()
 export class PostsService {
@@ -74,5 +75,51 @@ export class PostsService {
     }
   }
   //get all posts
-  async getAllPosts(user: JwtUser) {}
+  async getAllPosts(user: JwtUser) {
+    //for admin
+    if (user && user.role === 'ADMIN') {
+      return this.prismaService.post.findMany({
+        include: {
+          files: true,
+          category: true,
+          createdBy: true,
+        },
+        orderBy: { id: 'desc' },
+      });
+    }
+
+    // for follower => public and post that allowed followers to see
+    let followingIds: number[] = [];
+
+    //1. get the following IDs of this user
+    if (user) {
+      const follows = await this.prismaService.follow.findMany({
+        where: {
+          followerId: user.id,
+        },
+        select: { followingId: true },
+      });
+      //this query will return and object array
+      //like [{followingId: 1}, {followingId:2},...]
+      //we have to convert this object to an array
+      followingIds = follows.map((fl) => fl.followingId);
+    }
+    //2. query all follower-allow post and public post
+    const post = await this.prismaService.post.findMany({
+      where: {
+        OR: [
+          { privacy: Privacy.PUBLIC },
+          ...(user ? [{ createdById: user.id }] : []),
+          ...(followingIds.length > 0
+            ? [{ privacy: Privacy.FOLLOWER, createdById: { in: followingIds } }]
+            : []),
+        ],
+      },
+      include: {
+        category: true,
+        files: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
 }
