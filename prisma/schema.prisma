@@ -69,6 +69,8 @@ model User {
   //N-N relations
   followers Follow[] @relation("MyFollowers") //my followers
   following Follow[] @relation("MyFollowings") //my followings
+
+  like Like[]
 }
 
 model Category {
@@ -97,6 +99,7 @@ model Post {
 
   //1-N relationships
   files File[] @relation("PostBelongsFiles")
+  likes Like[]
 
 }
 
@@ -129,4 +132,14 @@ model Follow {
   following User @relation("MyFollowings", fields: [followingId], references: [id], onDelete: Cascade)
 
   @@id([followerId, followingId]) //the primary key includes 2 columns to avoid duplication
+}
+
+model Like {
+  userId Int //id of the user who likes a post
+  postId Int //id of the post that was liked by the above user
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@id([userId, postId])
 }

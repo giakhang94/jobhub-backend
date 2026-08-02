@@ -9,6 +9,7 @@ import { MailModule } from './mail/mail.module.js';
 import { PostsModule } from './posts/posts.module.js';
 import { FileModule } from './file/file.module.js';
 import { CloudinaryModule } from './cloudinary/cloudinary.module.js';
+import { LikeModule } from './like/like.module.js';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { CloudinaryModule } from './cloudinary/cloudinary.module.js';
     PostsModule,
     FileModule,
     CloudinaryModule,
+    LikeModule,
   ],
   controllers: [AppController],
   providers: [AppService],
