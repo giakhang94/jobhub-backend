@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   UploadedFiles,
@@ -15,6 +16,7 @@ import { GetUser } from '../auth/decorators/GetUser.Decorator.js';
 import type { JwtUser } from '../auth/interfaces/jwt-user.interface.js';
 import { CreatePostDto } from './dtos/create-post.dto.js';
 import { FilesInterceptor } from '@nestjs/platform-express';
+import { UpdatePostDto } from './dtos/update-post.dto.js';
 
 @Controller('posts')
 export class PostsController {
@@ -60,5 +62,18 @@ export class PostsController {
   @UseGuards(JwtAuthGuard)
   async getPostById(@GetUser() user: JwtUser, @Param('id') id: string) {
     return this.postsService.getPostById(user, Number(id));
+  }
+
+  //edit post by id
+  @Patch('/:id')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FilesInterceptor('files'))
+  async editPost(
+    @GetUser() user: JwtUser,
+    @Param('id') id: string,
+    files: Express.Multer.File[],
+    @Body() body: UpdatePostDto,
+  ) {
+    return this.postsService.updatePost(user, Number(id), files, body);
   }
 }

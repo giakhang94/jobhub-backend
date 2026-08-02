@@ -11,6 +11,7 @@ import {
 import { CreatePostDto } from './dtos/create-post.dto.js';
 import { FileService } from '../file/file.service.js';
 import { Privacy, Role } from '../../generated/prisma/enums.js';
+import { UpdatePostDto } from './dtos/update-post.dto.js';
 
 @Injectable()
 export class PostsService {
@@ -190,5 +191,104 @@ export class PostsService {
       return post;
     }
     throw new ForbiddenException('You can not see this post');
+  }
+
+  //update post
+  async updatePost(
+    user: JwtUser,
+    postId: number,
+    files: Express.Multer.File[],
+    body: UpdatePostDto,
+  ) {
+    const post = await this.prismaService.post.findUnique({
+      where: { id: postId },
+      include: { files: true, category: true, createdBy: true },
+    });
+    if (!post) throw new NotFoundException('post not found');
+    if (Number(user.id) !== post.createdById)
+      throw new ForbiddenException('You can not edit this post');
+    let uploadedFiles: any[] = [];
+    //upload files
+    if (files && files.length > 0) {
+      try {
+        uploadedFiles = await this.fileService.uploadFilesToCloud(files);
+      } catch (error) {
+        console.log('edit file error', error);
+        throw new InternalServerErrorException(
+          'error when uploading new files/images',
+        );
+      }
+    }
+    //create transaction upload files url to db and post meta data to db
+    try {
+      const result = await this.prismaService.$transaction(async (tx) => {
+        //1. update post
+        const updatedPost = await tx.post.update({
+          where: { id: postId },
+          data: body,
+        });
+        //2. upload file urls
+        if (uploadedFiles && uploadedFiles.length > 0) {
+          const newFiles = await this.fileService.saveFileRecordsToDB(
+            postId,
+            user.id,
+            uploadedFiles,
+            tx,
+          );
+        }
+        return await tx.post.findUnique({
+          where: { id: updatedPost.id },
+          include: {
+            files: true,
+            createdBy: true,
+            category: true,
+          },
+        });
+      });
+      return result;
+    } catch (error) {
+      console.log(error);
+      //delete uploaded file
+      const publicIds = uploadedFiles.map((file) => file.publicId);
+      await this.fileService.deleteFilesFromCloud(publicIds);
+      throw new InternalServerErrorException(
+        'error when updating post, please try again',
+      );
+    }
+  }
+
+  //delete post
+  async deletePost(user: JwtUser, postId: number) {
+    const post = await this.prismaService.post.findUnique({
+      where: { id: postId },
+      include: { files: true, category: true, createdBy: true },
+    });
+    if (!post) throw new NotFoundException('post not found');
+    if (Number(user.id) !== post.createdById && user.role !== Role.ADMIN) {
+      throw new ForbiddenException('You can not delete this post');
+    }
+    try {
+      //1. delete post record
+
+      await this.prismaService.post.delete({ where: { id: postId } });
+    } catch (error) {
+      console.log(error);
+      throw new InternalServerErrorException('can not delete this post');
+    }
+    //2. delete files from cloud
+    try {
+      let publicIds = post.files
+        .map((file) => (file.publicId ? [file.publicId] : []))
+        .flat();
+
+      if (publicIds && publicIds.length > 0)
+        await this.fileService.deleteFilesFromCloud(publicIds);
+    } catch (error) {
+      console.log('delete post files error', error);
+      // throw new InternalServerErrorException(
+      //   'can not delete related files from cloud',
+      // ); <== no need to throw this exception, avoid misunderstanding from users
+    }
+    return { message: 'post deleted' };
   }
 }
