@@ -83,4 +83,11 @@ export class PostsController {
   async deletePost(@GetUser() user: JwtUser, @Param('id') postId: string) {
     return this.postsService.deletePost(user, Number(postId));
   }
+
+  //delete posts
+  @Delete('/:id')
+  @UseGuards(JwtAuthGuard)
+  async deletePosts(@GetUser() user: JwtUser, @Body('ids') ids: number[]) {
+    return this.postsService.deletePosts(user, ids);
+  }
 }

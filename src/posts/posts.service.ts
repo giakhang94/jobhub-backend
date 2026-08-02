@@ -291,4 +291,46 @@ export class PostsService {
     }
     return { message: 'post deleted' };
   }
+
+  //delete posts
+  async deletePosts(user: JwtUser, ids: number[]) {
+    const posts = await this.prismaService.post.findMany({
+      where: { id: { in: ids } },
+      include: {
+        files: true,
+        category: true,
+        createdBy: true,
+      },
+    });
+    if (posts.length === 0) throw new NotFoundException('Posts not found');
+    //xu ly authorization
+    const isAdmin = user.role === Role.ADMIN;
+    const isNotAuthor = posts.filter(
+      (post) => Number(post.createdById) !== Number(user.id),
+    );
+    if (!isAdmin && isNotAuthor.length > 0)
+      throw new ForbiddenException(
+        'Only admin or the posts owner can delete multiple posts',
+      );
+
+    try {
+      await this.prismaService.post.deleteMany({ where: { id: { in: ids } } });
+    } catch (error) {
+      console.log(error);
+      throw new InternalServerErrorException('can not delete those posts');
+    }
+    //delete files from cloud
+    try {
+      const publicIds = posts
+        .flatMap((post) => post.files)
+        .map((file) => file.publicId)
+        .filter((id): id is string => Boolean(id));
+      if (publicIds.length > 0)
+        await this.fileService.deleteFilesFromCloud(publicIds);
+    } catch (error) {
+      console.log('from delete post/file', error);
+    }
+
+    return { mesage: 'posts deleted' };
+  }
 }
