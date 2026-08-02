@@ -8,10 +8,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtStrategy } from './strategies/Jwt.strategy.js';
 import { LocalStrategy } from './strategies/Local.strategy.js';
 import { JwtRefreshStrategy } from './strategies/Jwt-refresh.strategy.js';
+import { PassportModule } from '@nestjs/passport';
 
 @Module({
   providers: [AuthService, JwtStrategy, LocalStrategy, JwtRefreshStrategy],
   controllers: [AuthController],
+  exports: [JwtStrategy],
   imports: [
     PrismaModule,
     MailModule,
