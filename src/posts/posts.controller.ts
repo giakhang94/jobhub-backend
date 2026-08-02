@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -75,5 +76,11 @@ export class PostsController {
     @Body() body: UpdatePostDto,
   ) {
     return this.postsService.updatePost(user, Number(id), files, body);
+  }
+  //delete post
+  @Delete('/:id')
+  @UseGuards(JwtAuthGuard)
+  async deletePost(@GetUser() user: JwtUser, @Param('id') postId: string) {
+    return this.postsService.deletePost(user, Number(postId));
   }
 }
