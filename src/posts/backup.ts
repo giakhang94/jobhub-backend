@@ -6,7 +6,6 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { CreatePostDto } from './dtos/create-post.dto.js';
 import { FileService } from '../file/file.service.js';
@@ -20,12 +19,26 @@ export class PostsService {
     private readonly fileService: FileService,
   ) {}
 
+  // Standard Include Structure for Comments
+  private readonly includeComment = {
+    where: { parentId: null },
+    include: {
+      file: true,
+      user: { select: { id: true, name: true } },
+      replies: {
+        include: {
+          file: true,
+          user: { select: { id: true, name: true } },
+        },
+      },
+    },
+  };
+
   async createPost(
     user: JwtUser,
     body: CreatePostDto,
     files: Express.Multer.File[],
   ) {
-    //try-catch upload files
     let uploadedCloudFiles: any[] = [];
     try {
       if (files && files.length > 0) {
@@ -33,13 +46,11 @@ export class PostsService {
       }
     } catch (error) {
       console.log(error);
-      throw new BadRequestException('upload files failed');
+      throw new BadRequestException('Upload files failed');
     }
 
-    //try-catch 2: transaction save records to db
     try {
       return await this.prismaService.$transaction(async (tx) => {
-        //1. create new post
         const newPost = await tx.post.create({
           data: {
             title: body.title,
@@ -49,7 +60,7 @@ export class PostsService {
             createdById: Number(user.id),
           },
         });
-        //2. call the file service to save files link to db
+
         if (uploadedCloudFiles.length > 0) {
           await this.fileService.saveFileRecordsToDB(
             newPost.id,
@@ -59,7 +70,6 @@ export class PostsService {
           );
         }
 
-        // return post data and file data
         return tx.post.findUnique({
           where: { id: newPost.id },
           include: {
@@ -78,31 +88,20 @@ export class PostsService {
       );
     }
   }
-  //get all posts
+
+  // Get all posts (Newsfeed)
   async getAllPosts(user: JwtUser, page = 1, limit = 10) {
     const skip = limit * (page - 1);
-    const includeComment = {
-      where: { parentId: null },
-      include: {
-        file: true,
-        user: { select: { id: true, name: true } },
-        replies: {
-          include: {
-            file: true,
-            user: { select: { id: true, name: true } },
-          },
-        },
-      },
-    };
-    //for admin
-    if (user && user.role === 'ADMIN') {
+
+    // 1. Phân quyền ADMIN
+    if (user && user.role === Role.ADMIN) {
       const [posts, total] = await Promise.all([
         this.prismaService.post.findMany({
           include: {
             files: true,
             category: true,
             createdBy: true,
-            comments: includeComment,
+            comments: this.includeComment,
           },
           skip,
           take: limit,
@@ -110,6 +109,7 @@ export class PostsService {
         }),
         this.prismaService.post.count(),
       ]);
+
       return {
         data: posts,
         meta: {
@@ -121,23 +121,17 @@ export class PostsService {
       };
     }
 
-    // for follower => public and post that allowed followers to see
+    // 2. User thường / Follower
     let followingIds: number[] = [];
-
-    //1. get the following IDs of this user
     if (user) {
       const follows = await this.prismaService.follow.findMany({
-        where: {
-          followerId: user.id,
-        },
+        where: { followerId: user.id },
         select: { followingId: true },
       });
-      //this query will return and object array
-      //like [{followingId: 1}, {followingId:2},...]
-      //we have to convert this object to an array
       followingIds = follows.map((fl) => fl.followingId);
     }
-    //2. query all follower-allow post and public post
+
+    // Conditions: PUBLIC | Bài của chính mình | Bài FOLLOWER của người mình follow
     const whereCondition = {
       OR: [
         { privacy: Privacy.PUBLIC },
@@ -147,6 +141,8 @@ export class PostsService {
           : []),
       ],
     };
+
+    // 💡 Fix: Dùng Promise.all để count đúng tổng số lượng trong DB
     const [posts, total] = await Promise.all([
       this.prismaService.post.findMany({
         where: whereCondition,
@@ -154,7 +150,7 @@ export class PostsService {
           category: true,
           files: true,
           createdBy: true,
-          comments: includeComment,
+          comments: this.includeComment,
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -166,30 +162,19 @@ export class PostsService {
     return {
       data: posts,
       meta: {
-        total: total,
+        total,
         page,
         limit,
         totalPage: Math.ceil(total / limit),
       },
     };
   }
-  //get posts for guess (only public posts)
-  async getAllPublicPostsForGuess(page: number, limit: number) {
-    const includeComment = {
-      where: { parentId: null },
-      include: {
-        file: true,
-        user: { select: { id: true, name: true } },
-        replies: {
-          include: {
-            file: true,
-            user: { select: { id: true, name: true } },
-          },
-        },
-      },
-    };
+
+  // Get public posts for guest
+  async getAllPublicPostsForGuess(page = 1, limit = 10) {
     const whereCondition = { privacy: Privacy.PUBLIC };
     const skip = (page - 1) * limit;
+
     const [posts, total] = await Promise.all([
       this.prismaService.post.findMany({
         where: whereCondition,
@@ -197,7 +182,7 @@ export class PostsService {
           files: true,
           category: true,
           createdBy: true,
-          comments: includeComment,
+          comments: this.includeComment,
         },
         skip,
         take: limit,
@@ -205,47 +190,43 @@ export class PostsService {
       }),
       this.prismaService.post.count({ where: whereCondition }),
     ]);
+
     return {
       data: posts,
       meta: { total, page, limit, totalPage: Math.ceil(total / limit) },
     };
   }
-  //get post by id
+
+  // Get post by ID
   async getPostById(user: JwtUser, id: number) {
-    const includeComment = {
-      where: { parentId: null },
-      include: {
-        file: true,
-        user: { select: { id: true, name: true } },
-        replies: {
-          include: {
-            file: true,
-            user: { select: { id: true, name: true } },
-          },
-        },
-      },
-    };
     const role = user.role;
     const userId = Number(user.id);
+
     const post = await this.prismaService.post.findUnique({
       where: { id },
       include: {
         files: true,
         createdBy: true,
         category: true,
-        comments: includeComment,
+        comments: this.includeComment,
       },
     });
+
     if (!post) throw new NotFoundException('Post not found');
+
     if (
       post.privacy === Privacy.PUBLIC ||
       role === Role.ADMIN ||
       userId === post.createdById
-    )
+    ) {
       return post;
+    }
+
     if (post.privacy === Privacy.PRIVATE) {
       throw new ForbiddenException('You can not see this post');
     }
+
+    // Privacy = FOLLOWER
     const userFollowsCreator = await this.prismaService.follow.findUnique({
       where: {
         followerId_followingId: {
@@ -254,13 +235,15 @@ export class PostsService {
         },
       },
     });
+
     if (userFollowsCreator) {
       return post;
     }
+
     throw new ForbiddenException('You can not see this post');
   }
 
-  //update post
+  // Update post
   async updatePost(
     user: JwtUser,
     postId: number,
@@ -269,41 +252,41 @@ export class PostsService {
   ) {
     const post = await this.prismaService.post.findUnique({
       where: { id: postId },
-      include: { files: true, category: true, createdBy: true },
     });
-    if (!post) throw new NotFoundException('post not found');
-    if (Number(user.id) !== post.createdById)
+    if (!post) throw new NotFoundException('Post not found');
+    if (Number(user.id) !== post.createdById) {
       throw new ForbiddenException('You can not edit this post');
+    }
+
     let uploadedFiles: any[] = [];
-    //upload files
     if (files && files.length > 0) {
       try {
         uploadedFiles = await this.fileService.uploadFilesToCloud(files);
       } catch (error) {
-        console.log('edit file error', error);
+        console.log('Edit file error', error);
         throw new InternalServerErrorException(
-          'error when uploading new files/images',
+          'Error when uploading new files/images',
         );
       }
     }
-    //create transaction upload files url to db and post meta data to db
+
     try {
       const result = await this.prismaService.$transaction(async (tx) => {
-        //1. update post
         const updatedPost = await tx.post.update({
           where: { id: postId },
           data: body,
         });
-        //2. upload file urls
-        if (uploadedFiles && uploadedFiles.length > 0) {
-          const newFiles = await this.fileService.saveFileRecordsToDB(
-            user.id,
+
+        if (uploadedFiles.length > 0) {
+          await this.fileService.saveFileRecordsToDB(
+            updatedPost.id,
             uploadedFiles,
             tx,
-            postId,
+            user.id,
           );
         }
-        return await tx.post.findUnique({
+
+        return tx.post.findUnique({
           where: { id: updatedPost.id },
           include: {
             files: true,
@@ -315,109 +298,111 @@ export class PostsService {
       return result;
     } catch (error) {
       console.log(error);
-      //delete uploaded file
       const publicIds = uploadedFiles.map((file) => file.publicId);
-      await this.fileService.deleteFilesFromCloud(publicIds);
+      if (publicIds.length > 0) {
+        await this.fileService.deleteFilesFromCloud(publicIds);
+      }
       throw new InternalServerErrorException(
-        'error when updating post, please try again',
+        'Error when updating post, please try again',
       );
     }
   }
 
-  //delete post
+  // Delete post
   async deletePost(user: JwtUser, postId: number) {
+    // 💡 Include thêm comments & file của comments để dọn sạch Cloud
     const post = await this.prismaService.post.findUnique({
       where: { id: postId },
       include: {
         files: true,
-        category: true,
-        createdBy: true,
-        comments: { include: { file: true } },
+        comments: {
+          include: { file: true },
+        },
       },
     });
-    if (!post) throw new NotFoundException('post not found');
+
+    if (!post) throw new NotFoundException('Post not found');
     if (Number(user.id) !== post.createdById && user.role !== Role.ADMIN) {
       throw new ForbiddenException('You can not delete this post');
     }
-    //collect all publicIds from post
-    const postPublicIds = post.files
-      .map((file) => file.publicId)
+
+    // Gom publicId của cả Post lẫn Comment
+    const postFilePublicIds = post.files
+      .map((f) => f.publicId)
       .filter((id): id is string => Boolean(id));
-    //collect all publicIds from comments
-    const commentPublicIds = post.comments
-      .map((comment) => comment.file?.publicId)
+
+    const commentFilePublicIds = post.comments
+      .map((c) => c.file?.publicId)
       .filter((id): id is string => Boolean(id));
-    //join 2 map together
-    const allPublicIds = [...postPublicIds, ...commentPublicIds];
+
+    const allPublicIds = [...postFilePublicIds, ...commentFilePublicIds];
 
     try {
-      //1. delete post record
-
       await this.prismaService.post.delete({ where: { id: postId } });
     } catch (error) {
       console.log(error);
-      throw new InternalServerErrorException('can not delete this post');
+      throw new InternalServerErrorException('Can not delete this post');
     }
-    //2. delete files from cloud
-    try {
-      if (allPublicIds && allPublicIds.length > 0)
+
+    if (allPublicIds.length > 0) {
+      try {
         await this.fileService.deleteFilesFromCloud(allPublicIds);
-    } catch (error) {
-      console.log('delete post files error', error);
-      // throw new InternalServerErrorException(
-      //   'can not delete related files from cloud',
-      // ); <== no need to throw this exception, avoid misunderstanding from users
+      } catch (error) {
+        console.log('Delete post files error', error);
+      }
     }
-    return { message: 'post deleted' };
+
+    return { message: 'Post deleted successfully' };
   }
 
-  //delete posts
+  // Delete multiple posts
   async deletePosts(user: JwtUser, ids: number[]) {
     const posts = await this.prismaService.post.findMany({
       where: { id: { in: ids } },
       include: {
         files: true,
-        category: true,
-        createdBy: true,
-        comments: { include: { file: true } },
+        comments: {
+          include: { file: true },
+        },
       },
     });
+
     if (posts.length === 0) throw new NotFoundException('Posts not found');
-    //xu ly authorization
+
     const isAdmin = user.role === Role.ADMIN;
     const isNotAuthor = posts.filter(
       (post) => Number(post.createdById) !== Number(user.id),
     );
-    if (!isAdmin && isNotAuthor.length > 0)
+
+    if (!isAdmin && isNotAuthor.length > 0) {
       throw new ForbiddenException(
         'Only admin or the posts owner can delete multiple posts',
       );
+    }
+
+    // Gom toàn bộ Cloud File IDs
+    const allPublicIds = posts
+      .flatMap((post) => [
+        ...post.files.map((f) => f.publicId),
+        ...post.comments.map((c) => c.file?.publicId),
+      ])
+      .filter((id): id is string => Boolean(id));
 
     try {
       await this.prismaService.post.deleteMany({ where: { id: { in: ids } } });
     } catch (error) {
       console.log(error);
-      throw new InternalServerErrorException('can not delete those posts');
-    }
-    //delete files from cloud
-    try {
-      const postPublicIds = posts
-        .flatMap((post) => post.files)
-        .map((file) => file.publicId);
-
-      const commentPublicIds = posts
-        .flatMap((post) => post.comments)
-        .map((comment) => comment.file?.publicId);
-
-      const publicIds = [...postPublicIds, ...commentPublicIds].filter(
-        (id): id is string => Boolean(id),
-      );
-      if (publicIds.length > 0)
-        await this.fileService.deleteFilesFromCloud(publicIds);
-    } catch (error) {
-      console.log('from delete post/file', error);
+      throw new InternalServerErrorException('Can not delete those posts');
     }
 
-    return { mesage: 'posts deleted' };
+    if (allPublicIds.length > 0) {
+      try {
+        await this.fileService.deleteFilesFromCloud(allPublicIds);
+      } catch (error) {
+        console.log('From delete posts/files error', error);
+      }
+    }
+
+    return { message: 'Posts deleted successfully' };
   }
 }
