@@ -32,6 +32,7 @@ export class CommentService {
 
     //kiem tra parentId, make sure only 1 level reply
     let effectiveParentId: number | undefined = undefined;
+
     if (parentId) {
       const parentComment = await this.prismaService.comment.findUnique({
         where: { id: parentId },
@@ -62,14 +63,10 @@ export class CommentService {
       const result = await this.prismaService.$transaction(async (tx) => {
         //2.1 save comment to the comment table
         const data = { content: body.content, userId, postId };
-        if (parentId) {
-          const parentComment = await this.prismaService.comment.findUnique({
-            where: { id: parentId },
-          });
-          if (!parentComment)
-            throw new NotFoundException('the comment you replied do not exist');
-          data['parentId'] = parentId;
+        if (effectiveParentId) {
+          data['parentId'] = effectiveParentId;
         }
+
         const comment = await tx.comment.create({
           data: data,
         });
@@ -104,7 +101,7 @@ export class CommentService {
     const userId = Number(user.id);
     const comment = await this.prismaService.comment.findUnique({
       where: { id: commentId },
-      include: { file: true },
+      include: { file: true, replies: { include: { file: true } } },
     });
     if (!comment) throw new NotFoundException('comment not found');
     const post = await this.prismaService.post.findUnique({
@@ -119,6 +116,17 @@ export class CommentService {
     ) {
       throw new ForbiddenException('You can not delete this comment');
     }
+
+    //collect all file publicIds
+    const parentPublicId = comment.file?.publicId;
+    const replyPublicIds = comment.replies
+      .map((r) => r.file?.publicId)
+      .filter((id): id is string => Boolean(id));
+
+    const allPublicIds = [
+      ...(parentPublicId ? [parentPublicId] : []),
+      ...replyPublicIds,
+    ];
     try {
       const deletedComment = await this.prismaService.comment.delete({
         where: { id: commentId },
@@ -130,11 +138,11 @@ export class CommentService {
       );
     }
     //delete file belong with this comment
-    if (comment.file) {
+    if (allPublicIds.length > 0) {
       try {
-        await this.fileService.deleteFilesFromCloud([comment.file.publicId!]);
+        await this.fileService.deleteFilesFromCloud(allPublicIds);
       } catch (error) {
-        console.log(error);
+        console.log('delete comment from cloud error', error);
       }
     }
     return { message: 'comment deleted' };
