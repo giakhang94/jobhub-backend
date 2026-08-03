@@ -102,6 +102,13 @@ model Post {
   files File[] @relation("PostBelongsFiles")
   likes Like[]
   comments Comment[]
+
+  //for share post
+  originalPostId Int?
+
+  //1-N relation for sharing posts
+  originalPost Post? @relation("PostShares", fields: [originalPostId], references: [id], onDelete: SetNull)
+  sharedPosts Post[] @relation("PostShares")
 }
 
 model File {

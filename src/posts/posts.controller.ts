@@ -18,6 +18,7 @@ import type { JwtUser } from '../auth/interfaces/jwt-user.interface.js';
 import { CreatePostDto } from './dtos/create-post.dto.js';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { UpdatePostDto } from './dtos/update-post.dto.js';
+import { SharePostDto } from './dtos/share-post.dto.js';
 
 @Controller('posts')
 export class PostsController {
@@ -85,9 +86,20 @@ export class PostsController {
   }
 
   //delete posts
-  @Delete('/:id')
+  @Delete('delete-many/:id')
   @UseGuards(JwtAuthGuard)
   async deletePosts(@GetUser() user: JwtUser, @Body('ids') ids: number[]) {
     return this.postsService.deletePosts(user, ids);
+  }
+
+  //share post
+  @Post('share/:originalPostId')
+  @UseGuards(JwtAuthGuard)
+  async sharePost(
+    @GetUser() user: JwtUser,
+    @Param('originalPostId') originalPostId: string,
+    body: SharePostDto,
+  ) {
+    return this.postsService.sharePost(user, body, Number(originalPostId));
   }
 }

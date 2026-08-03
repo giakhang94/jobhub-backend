@@ -12,6 +12,7 @@ import { CreatePostDto } from './dtos/create-post.dto.js';
 import { FileService } from '../file/file.service.js';
 import { Privacy, Role } from '../../generated/prisma/enums.js';
 import { UpdatePostDto } from './dtos/update-post.dto.js';
+import { SharePostDto } from './dtos/share-post.dto.js';
 
 @Injectable()
 export class PostsService {
@@ -85,11 +86,11 @@ export class PostsService {
       where: { parentId: null },
       include: {
         file: true,
-        user: { select: { id: true, name: true } },
+        user: { select: { id: true, fullname: true } },
         replies: {
           include: {
             file: true,
-            user: { select: { id: true, name: true } },
+            user: { select: { id: true, fullname: true } },
           },
         },
       },
@@ -103,6 +104,15 @@ export class PostsService {
             category: true,
             createdBy: true,
             comments: includeComment,
+            originalPost: {
+              include: {
+                createdBy: {
+                  select: { id: true, fullname: true, avatar: true },
+                },
+                files: true,
+                category: true,
+              },
+            },
           },
           skip,
           take: limit,
@@ -155,6 +165,13 @@ export class PostsService {
           files: true,
           createdBy: true,
           comments: includeComment,
+          originalPost: {
+            include: {
+              createdBy: { select: { id: true, fullname: true, avatar: true } },
+              files: true,
+              category: true,
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -198,6 +215,13 @@ export class PostsService {
           category: true,
           createdBy: true,
           comments: includeComment,
+          originalPost: {
+            include: {
+              category: true,
+              files: true,
+              createdBy: { select: { id: true, fullname: true, avatar: true } },
+            },
+          },
         },
         skip,
         take: limit,
@@ -234,6 +258,13 @@ export class PostsService {
         createdBy: true,
         category: true,
         comments: includeComment,
+        originalPost: {
+          include: {
+            category: true,
+            files: true,
+            createdBy: { select: { id: true, fullname: true, avatar: true } },
+          },
+        },
       },
     });
     if (!post) throw new NotFoundException('Post not found');
@@ -419,5 +450,44 @@ export class PostsService {
     }
 
     return { mesage: 'posts deleted' };
+  }
+
+  //share post
+  async sharePost(user: JwtUser, body: SharePostDto, originalPostId: number) {
+    const userId = Number(user.id);
+    const originalPost = await this.prismaService.post.findUnique({
+      where: { id: originalPostId },
+      include: { files: true, createdBy: true, category: true },
+    });
+    if (!originalPost)
+      throw new NotFoundException(
+        'The post you are sharing is not available or has been removed',
+      );
+    const originalId = originalPost.originalPostId ?? originalPostId;
+    const newSlug = `${originalPost.slug}-share-${Date.now()}`;
+    const sharedPost = await this.prismaService.post.create({
+      data: {
+        content: body.content,
+        title: originalPost.title,
+        slug: newSlug,
+        originalPostId: originalId,
+        createdById: userId,
+        categoryId: originalPost.categoryId,
+        privacy: body.privacy ?? Privacy.PUBLIC,
+      },
+      include: {
+        createdBy: { select: { id: true, avatar: true, fullname: true } },
+        originalPost: {
+          include: {
+            files: true,
+            category: true,
+            createdBy: { select: { id: true, avatar: true, fullname: true } },
+          },
+        },
+      },
+    });
+    return {
+      sharedPost,
+    };
   }
 }
