@@ -71,6 +71,7 @@ model User {
   following Follow[] @relation("MyFollowings") //my followings
 
   like Like[]
+  comment Comment[]
 }
 
 model Category {
@@ -100,7 +101,7 @@ model Post {
   //1-N relationships
   files File[] @relation("PostBelongsFiles")
   likes Like[]
-
+  comments Comment[]
 }
 
 model File {
@@ -119,6 +120,11 @@ model File {
   //which post that the files belong with
   postId Int?
   post Post? @relation("PostBelongsFiles", fields: [postId], references: [id], onDelete: Cascade)
+
+
+  //which comment that th files belong with
+  commentId Int? @unique
+  comment Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 }
@@ -142,4 +148,30 @@ model Like {
   post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@id([userId, postId])
+}
+
+model Comment {
+  id Int @id @default(autoincrement()) @unique
+  userId Int
+  postId Int
+  content String @db.Text
+
+  //1-level nested comment
+  parentId Int?  //null = parent Comment, has an ID => child comments
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  //relation with post and user
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  //self-relation for nested comment
+  parent Comment? @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies Comment[] @relation("CommentReplies")
+
+
+  //relation with file (upload file in the comment)
+  file File?  
+
 }

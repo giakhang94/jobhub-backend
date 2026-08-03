@@ -17,7 +17,6 @@ export class FileService {
   }
 
   async saveFileRecordsToDB(
-    postId: number,
     uploaderId: number,
     filesData: Array<{
       url: string;
@@ -27,11 +26,24 @@ export class FileService {
       fileType: FileType;
     }>,
     tx: Prisma.TransactionClient | PrismaService = this.prisma, //transaction passed from postService (from outside)
+    postId?: number,
+    commentId?: number,
   ) {
     if (!filesData || filesData.length === 0) return;
-
-    return tx.file.createMany({
-      data: filesData.map((file) => ({
+    if (!commentId)
+      return tx.file.createMany({
+        data: filesData.map((file) => ({
+          url: file.url,
+          publicId: file.publicId ?? null, //make sure publicId can't be undefined
+          originalName: file.originalName,
+          mimeType: file.mimeType,
+          fileType: file.fileType,
+          uploaderId: uploaderId,
+          postId: postId,
+        })),
+      });
+    if (commentId) {
+      const dataArray = filesData.map((file) => ({
         url: file.url,
         publicId: file.publicId ?? null, //make sure publicId can't be undefined
         originalName: file.originalName,
@@ -39,8 +51,13 @@ export class FileService {
         fileType: file.fileType,
         uploaderId: uploaderId,
         postId: postId,
-      })),
-    });
+        commentId,
+      }));
+      const [dataObject] = dataArray;
+      return tx.file.create({
+        data: dataObject,
+      });
+    }
   }
   //delete files from cloud
   async deleteFilesFromCloud(publicIds: string[]) {

@@ -53,9 +53,9 @@ export class PostsService {
         if (uploadedCloudFiles.length > 0) {
           await this.fileService.saveFileRecordsToDB(
             newPost.id,
-            user.id,
             uploadedCloudFiles,
             tx,
+            user.id,
           );
         }
 
@@ -230,10 +230,10 @@ export class PostsService {
         //2. upload file urls
         if (uploadedFiles && uploadedFiles.length > 0) {
           const newFiles = await this.fileService.saveFileRecordsToDB(
-            postId,
             user.id,
             uploadedFiles,
             tx,
+            postId,
           );
         }
         return await tx.post.findUnique({
