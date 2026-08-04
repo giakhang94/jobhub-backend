@@ -50,6 +50,24 @@ enum NotificationType {
   REPLY
 }
 
+//enum for group module
+enum GroupPrivacy {
+  PUBLIC
+  PRIVATE
+}
+
+enum GroupRole {
+  OWNER
+  MODERATOR
+  MEMBER
+}
+
+enum JoinRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 //User table
 model User {
   id          Int         @id @default(autoincrement())
@@ -85,6 +103,11 @@ model User {
   //N-1 relation with notification table
   senderNotifications Notification[]  @relation("Sender")
   receiverNotifications Notification[]  @relation("Receiver")
+
+  //1-N with the groupMember table
+  userInGroup GroupMember[] @relation("UserInGroup")
+  joinRequest JoinRequest[] @relation("JoinRequest")
+
 }
 
 model Category {
@@ -122,7 +145,11 @@ model Post {
   //1-N relation for sharing posts
   originalPost Post? @relation("PostShares", fields: [originalPostId], references: [id], onDelete: SetNull)
   sharedPosts Post[] @relation("PostShares")
-  postsNoti Notification[] @relation("PostNotification")
+  postsNotification Notification[] @relation("PostNotification")
+
+  //relation with groups
+  groupId Int?
+  group Group? @relation("PostsInGroup", fields: [groupId], references: [id], onDelete: Cascade )
 }
 
 model File {
@@ -212,4 +239,55 @@ model Notification {
   sender User @relation("Sender", fields: [senderId],  references: [id], onDelete: Cascade)
   receiver User @relation("Receiver", fields: [receiverId], references: [id], onDelete: Cascade)
   post  Post?   @relation("PostNotification", fields: [postId], references: [id], onDelete: Cascade)
+}
+
+//GROUP
+model Group {
+  id Int @id @default(autoincrement())
+  name String
+  description String?
+  coverPhoto String?
+  privacy GroupPrivacy @default(PUBLIC)
+  requireApprove Boolean @default(false)
+  createdById Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  //relation
+  posts Post[] @relation("PostsInGroup")
+  groupMembers GroupMember[] @relation("GroupBelongsUser")
+  joinRequests JoinRequest[] @relation("JoinRequest")
+}
+
+//group member generated from the N-N relation of the Group table and the user table
+model GroupMember {
+  userId Int
+  groupId Int
+  role GroupRole @default(MEMBER)
+  canApproveMember Boolean @default(false)
+  canDeletePost Boolean @default(false)
+  canApprovePost Boolean @default(false) 
+  canPinPost Boolean @default(false)
+  canKickMember Boolean @default(false) 
+  joinedAt DateTime @default(now())
+  @@id([userId, groupId]) 
+  //relation with user table N-1
+  user User @relation("UserInGroup", fields: [userId], references: [id], onDelete: Cascade)
+  group Group @relation("GroupBelongsUser", fields: [groupId], references: [id], onDelete: Cascade)
+}
+
+//model join requests
+model JoinRequest {
+
+  userId Int
+  groupId Int
+  requestStatus JoinRequestStatus @default(PENDING)
+  createdAt DateTime @default(now())
+
+  @@id([userId, groupId])
+  //relation with user (N-1)
+  user User @relation("JoinRequest", fields: [userId], references: [id], onDelete: Cascade)
+  //relation with group (N-1)
+  group Group @relation("JoinRequest", fields: [groupId], references: [id], onDelete: Cascade)
+
 }
