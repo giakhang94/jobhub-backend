@@ -1,0 +1,88 @@
+import { NotificationType } from '../../generated/prisma/enums.js';
+import { PrismaService } from '../prisma/prisma.service.js';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+
+export interface CrateNotificationDto {
+  senderId: number;
+  receiverId: number;
+  type: NotificationType;
+  postId: number;
+}
+
+@Injectable()
+export class NotificationService {
+  constructor(private readonly prismaService: PrismaService) {}
+  //create a new notification
+  async createNotification(body: CrateNotificationDto) {
+    if (body.senderId === body.receiverId) return null;
+    return this.prismaService.notification.create({
+      data: {
+        senderId: body.senderId,
+        receiverId: body.receiverId,
+        type: body.type,
+        postId: body.postId ?? null,
+      },
+    });
+  }
+
+  //get user notifications
+  async getNotifications(userId: number) {
+    const notifications = await this.prismaService.notification.findMany({
+      where: { receiverId: userId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        sender: {
+          select: { id: true, fullname: true, avatar: true },
+        },
+        post: {
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+          },
+        },
+      },
+    });
+    const unreadCount = await this.prismaService.notification.count({
+      where: { receiverId: userId, isRead: false },
+    });
+    return {
+      notifications,
+      unreadCount,
+    };
+  }
+
+  //mark as read (1 or all)
+  async markAsRead(userId: number, notificationId: number) {
+    if (!notificationId) {
+      //mark as read for all notifications
+      return this.prismaService.notification.updateMany({
+        where: {
+          receiverId: userId,
+          isRead: false,
+        },
+        data: { isRead: true },
+      });
+    }
+    //mark as read for a specific notification
+    const notification = await this.prismaService.notification.findUnique({
+      where: { id: notificationId },
+    });
+    if (!notification) throw new NotFoundException('notification not found');
+
+    if (notification.receiverId !== userId) {
+      throw new ForbiddenException(
+        'You do not have permission to update this notification',
+      );
+    }
+    //update
+    return this.prismaService.notification.update({
+      where: { id: notificationId },
+      data: { isRead: true },
+    });
+  }
+}

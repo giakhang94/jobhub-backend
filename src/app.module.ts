@@ -11,6 +11,7 @@ import { FileModule } from './file/file.module.js';
 import { CloudinaryModule } from './cloudinary/cloudinary.module.js';
 import { LikeModule } from './like/like.module.js';
 import { CommentModule } from './comment/comment.module.js';
+import { NotificationModule } from './notification/notification.module.js';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { CommentModule } from './comment/comment.module.js';
     CloudinaryModule,
     LikeModule,
     CommentModule,
+    NotificationModule,
   ],
   controllers: [AppController],
   providers: [AppService],

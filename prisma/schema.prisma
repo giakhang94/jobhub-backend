@@ -41,6 +41,15 @@ enum Privacy {
   PRIVATE
 }
 
+//enum for notification
+enum NotificationType {
+  LIKE
+  SHARE
+  FOLLOW
+  COMMENT
+  REPLY
+}
+
 //User table
 model User {
   id          Int         @id @default(autoincrement())
@@ -72,6 +81,10 @@ model User {
 
   like Like[]
   comment Comment[]
+
+  //N-1 relation with notification table
+  senderNotifications Notification[]  @relation("Sender")
+  receiverNotifications Notification[]  @relation("Receiver")
 }
 
 model Category {
@@ -109,6 +122,7 @@ model Post {
   //1-N relation for sharing posts
   originalPost Post? @relation("PostShares", fields: [originalPostId], references: [id], onDelete: SetNull)
   sharedPosts Post[] @relation("PostShares")
+  postsNoti Notification[] @relation("PostNotification")
 }
 
 model File {
@@ -181,4 +195,21 @@ model Comment {
   //relation with file (upload file in the comment)
   file File?  
 
+}
+
+//NOTIFICATION
+model Notification {
+  id  Int @id @default(autoincrement())
+  senderId Int
+  receiverId Int
+  type NotificationType
+  postId Int?
+  commentId Int?
+  isRead Boolean @default(false)
+  createdAt DateTime @default(now())
+
+  //1-N relations
+  sender User @relation("Sender", fields: [senderId],  references: [id], onDelete: Cascade)
+  receiver User @relation("Receiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  post  Post?   @relation("PostNotification", fields: [postId], references: [id], onDelete: Cascade)
 }
