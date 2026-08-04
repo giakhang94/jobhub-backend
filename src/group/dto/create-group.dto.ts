@@ -15,5 +15,5 @@ export class CreateGroupDto {
   privacy?: GroupPrivacy;
 
   @IsOptional()
-  requireApprove!: Boolean;
+  requireApprove!: boolean;
 }
