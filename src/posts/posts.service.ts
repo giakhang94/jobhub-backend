@@ -10,15 +10,22 @@ import {
 } from '@nestjs/common';
 import { CreatePostDto } from './dtos/create-post.dto.js';
 import { FileService } from '../file/file.service.js';
-import { Privacy, Role } from '../../generated/prisma/enums.js';
+import {
+  NotificationType,
+  Privacy,
+  Role,
+} from '../../generated/prisma/enums.js';
 import { UpdatePostDto } from './dtos/update-post.dto.js';
 import { SharePostDto } from './dtos/share-post.dto.js';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { NotificationEvents } from '../notification/events/notification.events.js';
 
 @Injectable()
 export class PostsService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly fileService: FileService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async createPost(
@@ -486,6 +493,18 @@ export class PostsService {
         },
       },
     });
+    // 3. Bắn event tạo thông báo (nếu người share KHÔNG PHẢI tác giả bài gốc)
+    if (originalPost.createdById !== userId) {
+      this.eventEmitter.emit(
+        'notification.create',
+        new NotificationEvents({
+          senderId: userId,
+          receiverId: originalPost.createdById,
+          type: NotificationType.SHARE,
+        }),
+      );
+    }
+
     return {
       sharedPost,
     };
