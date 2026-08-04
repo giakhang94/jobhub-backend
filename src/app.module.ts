@@ -13,6 +13,7 @@ import { LikeModule } from './like/like.module.js';
 import { CommentModule } from './comment/comment.module.js';
 import { NotificationModule } from './notification/notification.module.js';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { GroupModule } from './group/group.module.js';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
     CommentModule,
     NotificationModule,
     EventEmitterModule.forRoot(),
+    GroupModule,
   ],
   controllers: [AppController],
   providers: [AppService],
