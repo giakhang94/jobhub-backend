@@ -8,13 +8,16 @@ import {
 } from '@nestjs/common';
 import { FileService } from '../file/file.service.js';
 import { CreateCommentDto } from './dto/create-comment.dto.js';
-import { Role } from '../../generated/prisma/enums.js';
+import { NotificationType, Role } from '../../generated/prisma/enums.js';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { NotificationEvents } from '../notification/events/notification.events.js';
 
 @Injectable()
 export class CommentService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly fileService: FileService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
   //create comment
   async createComment(
@@ -32,9 +35,9 @@ export class CommentService {
 
     //kiem tra parentId, make sure only 1 level reply
     let effectiveParentId: number | undefined = undefined;
-
+    let parentComment: any = undefined;
     if (parentId) {
-      const parentComment = await this.prismaService.comment.findUnique({
+      parentComment = await this.prismaService.comment.findUnique({
         where: { id: parentId },
       });
       if (!parentComment) {
@@ -84,6 +87,38 @@ export class CommentService {
           include: { file: true },
         });
       });
+
+      //emit event
+
+      // TH1: NẾU LÀ REPLY COMMENT
+      if (parentComment) {
+        // Chỉ bắn thông báo nếu người reply KHÔNG PHẢI là chủ comment được reply
+        if (parentComment.userId !== userId) {
+          this.eventEmitter.emit(
+            'notification.create',
+            new NotificationEvents({
+              senderId: userId,
+              receiverId: parentComment.userId,
+              type: NotificationType.REPLY,
+            }),
+          );
+        }
+      }
+      // TH2: NẾU LÀ COMMENT BÀI VIẾT
+      else {
+        // Chỉ bắn thông báo nếu người comment KHÔNG PHẢI là tác giả bài viết
+        if (post.createdById !== userId) {
+          this.eventEmitter.emit(
+            'notification.create',
+            new NotificationEvents({
+              senderId: userId,
+              receiverId: post.createdById,
+              type: NotificationType.COMMENT,
+            }),
+          );
+        }
+      }
+
       return result;
     } catch (error) {
       console.log('save comment meta error', error);

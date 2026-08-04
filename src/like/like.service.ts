@@ -1,3 +1,4 @@
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { JwtUser } from '../auth/interfaces/jwt-user.interface.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
@@ -5,10 +6,15 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+import { NotificationEvents } from '../notification/events/notification.events.js';
+import { NotificationType } from '../../generated/prisma/enums.js';
 
 @Injectable()
 export class LikeService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
   //toggle like
   async toggleLike(user: JwtUser, postId: number) {
@@ -47,7 +53,17 @@ export class LikeService {
             userId,
           },
         });
-
+        if (userId !== post.createdById) {
+          this.eventEmitter.emit(
+            'notification.create',
+            new NotificationEvents({
+              senderId: userId,
+              receiverId: post.createdById,
+              type: NotificationType.LIKE,
+              postId: postId,
+            }),
+          );
+        }
         return { message: 'you liked this post', isLiked: true };
       }
     } catch (error) {
