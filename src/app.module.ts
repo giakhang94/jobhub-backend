@@ -12,6 +12,7 @@ import { CloudinaryModule } from './cloudinary/cloudinary.module.js';
 import { LikeModule } from './like/like.module.js';
 import { CommentModule } from './comment/comment.module.js';
 import { NotificationModule } from './notification/notification.module.js';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { NotificationModule } from './notification/notification.module.js';
     LikeModule,
     CommentModule,
     NotificationModule,
+    EventEmitterModule.forRoot(),
   ],
   controllers: [AppController],
   providers: [AppService],

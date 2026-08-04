@@ -1,3 +1,4 @@
+import { OnEvent } from '@nestjs/event-emitter';
 import { NotificationType } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
@@ -5,6 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { NotificationEvents } from './events/notification.events.js';
 
 export interface CrateNotificationDto {
   senderId: number;
@@ -16,6 +18,23 @@ export interface CrateNotificationDto {
 @Injectable()
 export class NotificationService {
   constructor(private readonly prismaService: PrismaService) {}
+  //listen events
+  @OnEvent('notification.create')
+  async handleNotificationEvent(payload: NotificationEvents) {
+    if (payload.senderId === payload.receiverId) {
+      return null;
+    }
+
+    return this.prismaService.notification.create({
+      data: {
+        senderId: payload.senderId,
+        receiverId: payload.receiverId,
+        type: payload.type,
+        postId: payload.postId ?? null,
+      },
+    });
+  }
+
   //create a new notification
   async createNotification(body: CrateNotificationDto) {
     if (body.senderId === body.receiverId) return null;
