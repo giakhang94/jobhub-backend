@@ -89,6 +89,6 @@ export class GroupController {
     @Param('groupId', ParseIntPipe) groupId: number,
     @Param('targetUserId', ParseIntPipe) targetUserId: number,
   ) {
-    return this.rejectRequest(user, groupId, targetUserId);
+    return this.groupService.rejectRequest(user, groupId, targetUserId);
   }
 }

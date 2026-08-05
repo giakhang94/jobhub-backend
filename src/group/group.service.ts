@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -13,6 +14,8 @@ import {
   GroupRole,
   JoinRequestStatus,
 } from '../../generated/prisma/enums.js';
+import { UpdateMemberPermissionsDto } from './dto/update-member-permission.dto.js';
+import { GROUP_CONFIG } from './constants/group.constant.js';
 
 @Injectable()
 export class GroupService {
@@ -348,6 +351,239 @@ export class GroupService {
     } catch (error) {
       console.log('approve multiple error', error);
       throw new InternalServerErrorException('Failed to approve requests');
+    }
+  }
+
+  //kick member
+  async kickMember(user: JwtUser, memberId: number, groupId) {
+    const userId = Number(user.id);
+    if (userId === memberId) {
+      throw new ForbiddenException('You can not kick  yourself');
+    }
+    const userInGroup = await this.prismaService.groupMember.findUnique({
+      where: {
+        userId_groupId: {
+          userId,
+          groupId,
+        },
+      },
+    });
+    if (!userInGroup) {
+      throw new ForbiddenException('You are not in this group');
+    }
+    if (userInGroup.role !== GroupRole.OWNER && !userInGroup.canKickMember) {
+      throw new ForbiddenException(
+        'You have no permission to kick a group member',
+      );
+    }
+    const member = await this.prismaService.groupMember.findUnique({
+      where: { userId_groupId: { userId: memberId, groupId } },
+    });
+
+    if (!member) {
+      throw new NotFoundException(
+        'This user is not in the group or was kicked',
+      );
+    }
+    if (
+      userInGroup.role !== GroupRole.OWNER &&
+      member.role === GroupRole.MODERATOR
+    ) {
+      throw new ForbiddenException(
+        'Only owner can kick other owner and moderator',
+      );
+    }
+    if (member.role === GroupRole.OWNER) {
+      throw new ForbiddenException('Owner can not be kicked');
+    }
+    return this.prismaService.groupMember.delete({
+      where: {
+        userId_groupId: {
+          groupId,
+          userId: memberId,
+        },
+      },
+    });
+  }
+
+  //update user permission
+  async updateMemberPermission(
+    user: JwtUser,
+    targetUserId: number,
+    groupId: number,
+    body: UpdateMemberPermissionsDto,
+  ) {
+    const userId = Number(user.id);
+    const userInGroup = await this.prismaService.groupMember.findUnique({
+      where: { userId_groupId: { userId, groupId } },
+    });
+
+    if (!userInGroup) throw new NotFoundException('You are not in this group');
+    if (userInGroup.role !== GroupRole.OWNER) {
+      throw new ForbiddenException(
+        'Only the Owner can set permission for members',
+      );
+    }
+    const targetUser = await this.prismaService.groupMember.findUnique({
+      where: { userId_groupId: { groupId, userId: targetUserId } },
+    });
+    if (!targetUser)
+      throw new NotFoundException('this user is not in this group');
+
+    if (targetUser.role === GroupRole.OWNER)
+      throw new ForbiddenException(
+        'You can not set permission for other owners',
+      );
+    if (body.role && body.role === GroupRole.OWNER)
+      throw new ForbiddenException(
+        "Please transfer owner in the 'transfer owner' tab",
+      );
+    const moderatorNumber = await this.prismaService.groupMember.count({
+      where: { groupId, role: GroupRole.MODERATOR },
+    });
+    if (
+      body.role &&
+      body.role === GroupRole.MODERATOR &&
+      moderatorNumber === GROUP_CONFIG.MAX_MODERATOR
+    ) {
+      throw new BadRequestException(
+        'the number of Moderators reach the limit. Please remove one to add a new one',
+      );
+    }
+    return this.prismaService.groupMember.update({
+      where: {
+        userId_groupId: {
+          userId: targetUserId,
+          groupId,
+        },
+      },
+      data: body,
+    });
+  }
+  //transfer role
+  async transferOwnerShip(
+    user: JwtUser,
+    groupId: number,
+    targetUserId: number,
+    ownerForRemoveId?: number,
+    ownerNewRole: GroupRole = GroupRole.MODERATOR, // Default về MODERATOR nếu không truyền
+    modToBeRemovedId?: number,
+  ) {
+    const userId = Number(user.id);
+
+    // 1. Check quyền người gọi API
+    const userInGroup = await this.prismaService.groupMember.findUnique({
+      where: { userId_groupId: { userId, groupId } },
+    });
+    if (!userInGroup || userInGroup.role !== GroupRole.OWNER) {
+      throw new ForbiddenException(
+        'You do not have permission to do this task',
+      );
+    }
+
+    // 2. Check targetUser
+    const targetUser = await this.prismaService.groupMember.findUnique({
+      where: { userId_groupId: { userId: targetUserId, groupId } },
+    });
+
+    if (!targetUser) {
+      throw new NotFoundException('The target user is not in this group');
+    }
+
+    // FIX LỖI: Nếu targetUser đã là Owner rồi thì dừng ngay
+    if (targetUser.role === GroupRole.OWNER) {
+      throw new BadRequestException('This user is already an Owner');
+    }
+
+    if (ownerNewRole === GroupRole.OWNER) {
+      throw new BadRequestException('Please be serious!!!');
+    }
+
+    // 3. Đếm số lượng Owner & Moderator hiện tại
+    const [ownerNumber, moderatorNumber] = await Promise.all([
+      this.prismaService.groupMember.count({
+        where: { groupId, role: GroupRole.OWNER },
+      }),
+      this.prismaService.groupMember.count({
+        where: { groupId, role: GroupRole.MODERATOR },
+      }),
+    ]);
+
+    // TRƯỜNG HỢP 1: Chưa đầy Owner -> Thêm thẳng
+    if (ownerNumber < GROUP_CONFIG.MAX_OWNERS) {
+      return this.prismaService.groupMember.update({
+        where: { userId_groupId: { userId: targetUserId, groupId } },
+        data: { role: GroupRole.OWNER },
+      });
+    }
+
+    // TRƯỜNG HỢP 2: Đã đầy Owner -> Bắt buộc hạ 1 Owner
+    if (!ownerForRemoveId) {
+      throw new BadRequestException(
+        'The number of Owners has reached the limit. You must remove 1 owner to make a new one',
+      );
+    }
+
+    const ownerForRemove = await this.prismaService.groupMember.findUnique({
+      where: { userId_groupId: { userId: ownerForRemoveId, groupId } },
+    });
+
+    if (!ownerForRemove || ownerForRemove.role !== GroupRole.OWNER) {
+      throw new NotFoundException(
+        'The specified owner to remove was not found or is not an Owner',
+      );
+    }
+
+    try {
+      return await this.prismaService.$transaction(async (tx) => {
+        // Nếu giáng Owner xuống MODERATOR mà danh sách Mod đã đầy -> Hạ 1 Mod xuống MEMBER trước
+        if (
+          ownerNewRole === GroupRole.MODERATOR &&
+          moderatorNumber >= GROUP_CONFIG.MAX_MODERATOR
+        ) {
+          if (!modToBeRemovedId) {
+            throw new BadRequestException(
+              'The number of Moderators has reached maximum limit. Please choose a Moderator to demote',
+            );
+          }
+
+          const modToBeRemoved = await tx.groupMember.findUnique({
+            where: { userId_groupId: { userId: modToBeRemovedId, groupId } },
+          });
+
+          if (!modToBeRemoved || modToBeRemoved.role !== GroupRole.MODERATOR) {
+            throw new NotFoundException(
+              'The moderator to be demoted was not found',
+            );
+          }
+
+          await tx.groupMember.update({
+            where: { userId_groupId: { userId: modToBeRemovedId, groupId } },
+            data: { role: GroupRole.MEMBER },
+          });
+        }
+
+        // Hạ quyền Owner được chọn
+        await tx.groupMember.update({
+          where: { userId_groupId: { userId: ownerForRemoveId, groupId } },
+          data: { role: ownerNewRole },
+        });
+
+        // Nâng Target User lên OWNER
+        return tx.groupMember.update({
+          where: { userId_groupId: { userId: targetUserId, groupId } },
+          data: { role: GroupRole.OWNER },
+        });
+      });
+    } catch (error) {
+      // FIX LỖI: Nếu là HttpException (BadRequest, NotFound...) thì quăng lại nguyên vẹn
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      console.log('transfer role error', error);
+      throw new InternalServerErrorException(
+        'Something went wrong, please try again',
+      );
     }
   }
 }
