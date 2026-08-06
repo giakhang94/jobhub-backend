@@ -549,13 +549,88 @@ export class PostsService {
       },
     });
     if (!userInGroup) throw new ForbiddenException('You are not in this group');
-    if (userInGroup.role !== GroupRole.OWNER && userInGroup.canApprovePost) {
+    if (userInGroup.role !== GroupRole.OWNER && !userInGroup.canApprovePost) {
       throw new ForbiddenException(
         'You do not have permission to see pending posts',
       );
     }
     return this.prismaService.post.findMany({
       where: { groupId, status: PostStatus.PENDING },
+    });
+  }
+
+  //approve post
+  async approvePost(user: JwtUser, postId: number, groupId: number) {
+    const userId = Number(user.id);
+    const userInGroup = await this.prismaService.groupMember.findUnique({
+      where: {
+        userId_groupId: {
+          userId,
+          groupId,
+        },
+      },
+    });
+    if (!userInGroup) {
+      throw new ForbiddenException('You are not in this group');
+    }
+    const post = await this.prismaService.post.findUnique({
+      where: { id: postId },
+    });
+    if (!post)
+      throw new NotFoundException(
+        'Post not found or was rejected by other moderator',
+      );
+
+    if (post.groupId !== groupId) {
+      throw new ForbiddenException('This post does not belong to this group');
+    }
+    if (
+      post.status === PostStatus.PUBLISHED ||
+      post.status === PostStatus.REJECTED
+    ) {
+      throw new BadRequestException('This post has been approved or deleted');
+    }
+    if (userInGroup.role !== GroupRole.OWNER && !userInGroup.canApprovePost) {
+      throw new ForbiddenException(
+        'You do not have permission to approve posts',
+      );
+    }
+    return await this.prismaService.post.update({
+      where: {
+        id: postId,
+      },
+      data: { status: PostStatus.PUBLISHED },
+    });
+  }
+
+  //reject post
+  async rejectPost(user: JwtUser, postId: number, groupId: number) {
+    const userId = Number(user.id);
+    const userInGroup = await this.prismaService.groupMember.findUnique({
+      where: {
+        userId_groupId: {
+          userId,
+          groupId,
+        },
+      },
+    });
+    if (!userInGroup) throw new ForbiddenException('You are not in this group');
+    const post = await this.prismaService.post.findUnique({
+      where: { id: postId },
+    });
+    if (!post) throw new NotFoundException('Post not found');
+    if (post.groupId !== groupId)
+      throw new BadRequestException('This post does not belong to this group');
+    if (post.status !== PostStatus.PENDING) {
+      throw new BadRequestException('This post has already been processed');
+    }
+    if (userInGroup.role !== GroupRole.OWNER && !userInGroup.canApprovePost)
+      throw new ForbiddenException(
+        'You do not have permission to reject a post',
+      );
+    return this.prismaService.post.update({
+      where: { id: postId },
+      data: { status: PostStatus.REJECTED },
     });
   }
 }
