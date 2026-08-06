@@ -60,4 +60,8 @@ export class CreatePostDto {
   @IsOptional()
   @IsEnum(Privacy)
   privacy?: Privacy;
+
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  groupId?: number;
 }

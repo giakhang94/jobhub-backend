@@ -406,7 +406,7 @@ export class GroupService {
     });
   }
 
-  //update user permission
+  //update user permission (modified by AI)
   async updateMemberPermission(
     user: JwtUser,
     targetUserId: number,
@@ -586,4 +586,6 @@ export class GroupService {
       );
     }
   }
+
+  //posts handling in the group
 }
