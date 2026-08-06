@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Query,
@@ -101,5 +102,16 @@ export class PostsController {
     body: SharePostDto,
   ) {
     return this.postsService.sharePost(user, body, Number(originalPostId));
+  }
+
+  //group post handling
+  //get pending posts
+  @Get('/:groupId/pending')
+  @UseGuards(JwtAuthGuard)
+  async getPendingPosts(
+    @GetUser() user: JwtUser,
+    @Param('groupId', ParseIntPipe) groupId: number,
+  ) {
+    return this.postsService.getPendingPosts(user, groupId);
   }
 }

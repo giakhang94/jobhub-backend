@@ -28,6 +28,8 @@ enum PostStatus {
   DRAFT
   PUBLISHED
   ARCHIVED
+  PENDING
+  REJECTED
 }
 
 enum FileType {

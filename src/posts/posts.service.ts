@@ -11,7 +11,9 @@ import {
 import { CreatePostDto } from './dtos/create-post.dto.js';
 import { FileService } from '../file/file.service.js';
 import {
+  GroupRole,
   NotificationType,
+  PostStatus,
   Privacy,
   Role,
 } from '../../generated/prisma/enums.js';
@@ -33,6 +35,29 @@ export class PostsService {
     body: CreatePostDto,
     files: Express.Multer.File[],
   ) {
+    const userId = Number(user.id);
+    const groupId = Number(body.groupId);
+    //check if the creator is in the group
+
+    if (groupId) {
+      const userInGroup = await this.prismaService.groupMember.findUnique({
+        where: { userId_groupId: { userId, groupId } },
+        include: { group: true },
+      });
+      if (!userInGroup) {
+        throw new ForbiddenException('you are not in this group');
+      }
+      if (
+        userInGroup.group.requireApprove &&
+        userInGroup.role !== GroupRole.OWNER &&
+        userInGroup.role !== GroupRole.MODERATOR
+      ) {
+        body.status = PostStatus.PENDING;
+      } else {
+        body.status = PostStatus.PUBLISHED;
+      }
+    }
+
     //try-catch upload files
     let uploadedCloudFiles: any[] = [];
     try {
@@ -55,6 +80,8 @@ export class PostsService {
             content: body.content,
             categoryId: Number(body.categoryId),
             createdById: Number(user.id),
+            groupId: body.groupId ? Number(body.groupId) : null,
+            status: body.status,
           },
         });
         //2. call the file service to save files link to db
@@ -508,5 +535,27 @@ export class PostsService {
     return {
       sharedPost,
     };
+  }
+
+  //group posts handling
+  async getPendingPosts(user: JwtUser, groupId: number) {
+    const userId = Number(user.id);
+    const userInGroup = await this.prismaService.groupMember.findUnique({
+      where: {
+        userId_groupId: {
+          userId,
+          groupId,
+        },
+      },
+    });
+    if (!userInGroup) throw new ForbiddenException('You are not in this group');
+    if (userInGroup.role !== GroupRole.OWNER && userInGroup.canApprovePost) {
+      throw new ForbiddenException(
+        'You do not have permission to see pending posts',
+      );
+    }
+    return this.prismaService.post.findMany({
+      where: { groupId, status: PostStatus.PENDING },
+    });
   }
 }
