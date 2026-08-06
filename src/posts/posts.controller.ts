@@ -114,4 +114,24 @@ export class PostsController {
   ) {
     return this.postsService.getPendingPosts(user, groupId);
   }
+  //approve post
+  @Patch('/approve/:groupId/:postId')
+  @UseGuards(JwtAuthGuard)
+  async approvePost(
+    @GetUser() user: JwtUser,
+    @Param('groupId', ParseIntPipe) groupId: number,
+    @Param('postId', ParseIntPipe) postId: number,
+  ) {
+    return this.postsService.approvePost(user, postId, groupId);
+  }
+  //reject post
+  @Patch('/reject/:groupId/:postId')
+  @UseGuards(JwtAuthGuard)
+  async rejectPost(
+    @GetUser() user: JwtUser,
+    @Param('groupId', ParseIntPipe) groupId: number,
+    @Param('postId', ParseIntPipe) postId: number,
+  ) {
+    return this.postsService.rejectPost(user, postId, groupId);
+  }
 }

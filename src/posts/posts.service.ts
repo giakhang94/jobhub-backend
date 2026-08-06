@@ -538,6 +538,7 @@ export class PostsService {
   }
 
   //group posts handling
+  //get pending post
   async getPendingPosts(user: JwtUser, groupId: number) {
     const userId = Number(user.id);
     const userInGroup = await this.prismaService.groupMember.findUnique({
