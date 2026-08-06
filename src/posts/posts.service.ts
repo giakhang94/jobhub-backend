@@ -11,6 +11,7 @@ import {
 import { CreatePostDto } from './dtos/create-post.dto.js';
 import { FileService } from '../file/file.service.js';
 import {
+  GroupPrivacy,
   GroupRole,
   NotificationType,
   PostStatus,
@@ -633,5 +634,49 @@ export class PostsService {
       where: { id: postId },
       data: { status: PostStatus.REJECTED },
     });
+  }
+
+  //get group posts
+  async getGroupPost(user: JwtUser, groupId: number, page = 1, limit = 10) {
+    const skip = (page - 1) * limit;
+    const userId = Number(user.id);
+    const userInGroup = await this.prismaService.groupMember.findUnique({
+      where: { userId_groupId: { userId, groupId } },
+      include: { group: true },
+    });
+    const group = await this.prismaService.group.findUnique({
+      where: { id: groupId },
+    });
+    if (!group) throw new NotFoundException('group not exist');
+    if (!userInGroup && group?.privacy === GroupPrivacy.PRIVATE)
+      throw new ForbiddenException('Only member can see posts in this group');
+    const posts = await this.prismaService.post.findMany({
+      where: { groupId, status: PostStatus.PUBLISHED },
+      include: {
+        files: true,
+        comments: {
+          take: 5,
+          include: {
+            user: { select: { avatar: true, fullname: true, id: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+        createdBy: { select: { id: true, fullname: true, avatar: true } },
+        _count: {
+          select: {
+            comments: true,
+            likes: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+    });
+    const total = await this.prismaService.post.count({
+      where: { groupId, status: PostStatus.PUBLISHED },
+    });
+    const numOfPages = Math.ceil(total / limit);
+    return { posts, page, limit, total, numOfPages };
   }
 }
