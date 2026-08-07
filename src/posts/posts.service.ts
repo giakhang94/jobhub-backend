@@ -498,6 +498,16 @@ export class PostsService {
       throw new NotFoundException(
         'The post you are sharing is not available or has been removed',
       );
+    if (originalPost.groupId) {
+      const group = await this.prismaService.group.findUnique({
+        where: { id: originalPost.groupId },
+      });
+      if (!group) throw new NotFoundException('group not found');
+      if (group.privacy === GroupPrivacy.PRIVATE)
+        throw new ForbiddenException(
+          'You can not share a post from a Private Group',
+        );
+    }
     const originalId = originalPost.originalPostId ?? originalPostId;
     const newSlug = `${originalPost.slug}-share-${Date.now()}`;
     const sharedPost = await this.prismaService.post.create({
