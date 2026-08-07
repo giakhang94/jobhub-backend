@@ -128,6 +128,7 @@ model Post {
   viewCount Int @default(0)
   content String @db.Text
   privacy Privacy @default(PUBLIC)
+  isPinned Boolean? @default(false)
 
   //Foreign Keys
   createdById Int

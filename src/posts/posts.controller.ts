@@ -134,4 +134,25 @@ export class PostsController {
   ) {
     return this.postsService.rejectPost(user, postId, groupId);
   }
+
+  @Get()
+  @UseGuards(JwtAuthGuard)
+  async getAllGroupPosts(@GetUser() user: JwtUser, @Query() query: any) {
+    const { page, limit } = query;
+    return this.postsService.getGroupPosts(
+      user,
+      Number(page) || 1,
+      Number(limit) || 10,
+    );
+  }
+
+  @Delete('/group-post/:groupId/:postId')
+  @UseGuards(JwtAuthGuard)
+  async deleteGroupPost(
+    @GetUser() user: JwtUser,
+    @Param('groupId', ParseIntPipe) groupId: number,
+    @Param('postId', ParseIntPipe) postId: number,
+  ) {
+    return this.postsService.deleteGroupPost(user, postId, groupId);
+  }
 }

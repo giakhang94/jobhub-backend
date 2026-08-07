@@ -22,6 +22,8 @@ import { UpdatePostDto } from './dtos/update-post.dto.js';
 import { SharePostDto } from './dtos/share-post.dto.js';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotificationEvents } from '../notification/events/notification.events.js';
+import { take } from 'rxjs';
+import { group } from 'console';
 
 @Injectable()
 export class PostsService {
@@ -119,15 +121,11 @@ export class PostsService {
     const skip = limit * (page - 1);
     const includeComment = {
       where: { parentId: null },
+      take: 5,
       include: {
         file: true,
         user: { select: { id: true, fullname: true } },
-        replies: {
-          include: {
-            file: true,
-            user: { select: { id: true, fullname: true } },
-          },
-        },
+        _count: { select: { replies: true } },
       },
     };
     //for admin
@@ -146,6 +144,12 @@ export class PostsService {
                 },
                 files: true,
                 category: true,
+              },
+            },
+            _count: {
+              select: {
+                comments: true,
+                likes: true,
               },
             },
           },
@@ -200,6 +204,7 @@ export class PostsService {
           files: true,
           createdBy: true,
           comments: includeComment,
+          _count: { select: { comments: true, likes: true } },
           originalPost: {
             include: {
               createdBy: { select: { id: true, fullname: true, avatar: true } },
@@ -229,15 +234,11 @@ export class PostsService {
   async getAllPublicPostsForGuess(page: number, limit: number) {
     const includeComment = {
       where: { parentId: null },
+      take: 5,
       include: {
         file: true,
-        user: { select: { id: true, name: true } },
-        replies: {
-          include: {
-            file: true,
-            user: { select: { id: true, name: true } },
-          },
-        },
+        user: { select: { id: true, fullname: true } },
+        _count: { select: { replies: true } },
       },
     };
     const whereCondition = { privacy: Privacy.PUBLIC };
@@ -250,6 +251,7 @@ export class PostsService {
           category: true,
           createdBy: true,
           comments: includeComment,
+          _count: { select: { comments: true, likes: true } },
           originalPost: {
             include: {
               category: true,
@@ -273,15 +275,12 @@ export class PostsService {
   async getPostById(user: JwtUser, id: number) {
     const includeComment = {
       where: { parentId: null },
+      orderBy: { createdAt: 'desc' as const },
+      take: 10,
       include: {
         file: true,
-        user: { select: { id: true, name: true } },
-        replies: {
-          include: {
-            file: true,
-            user: { select: { id: true, name: true } },
-          },
-        },
+        user: { select: { id: true, fullname: true } },
+        _count: { select: { replies: true } },
       },
     };
     const role = user.role;
@@ -293,6 +292,7 @@ export class PostsService {
         createdBy: true,
         category: true,
         comments: includeComment,
+        _count: { select: { comments: true, likes: true } },
         originalPost: {
           include: {
             category: true,
@@ -637,7 +637,7 @@ export class PostsService {
   }
 
   //get group posts
-  async getGroupPost(user: JwtUser, groupId: number, page = 1, limit = 10) {
+  async getGroupPosts(user: JwtUser, groupId: number, page = 1, limit = 10) {
     const skip = (page - 1) * limit;
     const userId = Number(user.id);
     const userInGroup = await this.prismaService.groupMember.findUnique({
@@ -669,7 +669,7 @@ export class PostsService {
           },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { isPinned: 'desc' }],
       skip,
       take: limit,
     });
@@ -678,5 +678,59 @@ export class PostsService {
     });
     const numOfPages = Math.ceil(total / limit);
     return { posts, page, limit, total, numOfPages };
+  }
+
+  //toggle pin a post
+  async togglePinPost(user: JwtUser, groupId: number, postId: number) {
+    const userId = Number(user.id);
+    const userInGroup = await this.prismaService.groupMember.findUnique({
+      where: { userId_groupId: { userId, groupId } },
+    });
+    if (!userInGroup) throw new ForbiddenException('You are not in this group');
+    if (userInGroup.role !== GroupRole.OWNER && !userInGroup.canPinPost)
+      throw new ForbiddenException('You do not have permission to pin a post');
+    const post = await this.prismaService.post.findUnique({
+      where: { id: postId },
+    });
+    if (!post) throw new NotFoundException('Post not found');
+    if (post.status === PostStatus.PENDING)
+      throw new ForbiddenException('You have to approve this post first');
+    if (post.groupId !== groupId)
+      throw new BadRequestException('This post is not in this group');
+    const newIsPinned = post.isPinned ? false : true;
+    return this.prismaService.post.update({
+      where: { id: postId, groupId },
+      data: { isPinned: newIsPinned },
+    });
+  }
+
+  //delete group post
+  async deleteGroupPost(user: JwtUser, postId: number, groupId: number) {
+    const userId = Number(user.id);
+    const userInGroup = await this.prismaService.groupMember.findUnique({
+      where: {
+        userId_groupId: {
+          userId,
+          groupId,
+        },
+      },
+    });
+    const post = await this.prismaService.post.findUnique({
+      where: { id: postId },
+    });
+    if (!post) throw new NotFoundException('Post not found');
+    if (!userInGroup) throw new ForbiddenException('You are not in this group');
+    if (
+      userInGroup.role !== GroupRole.OWNER &&
+      !userInGroup.canDeletePost &&
+      post.createdById !== userId
+    )
+      throw new ForbiddenException(
+        'You have no permission to delete this post',
+      );
+    if (post.groupId !== groupId)
+      throw new ForbiddenException('this post does not belong to this group');
+
+    return this.prismaService.post.delete({ where: { id: postId, groupId } });
   }
 }
