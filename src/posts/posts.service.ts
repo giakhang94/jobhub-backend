@@ -94,10 +94,10 @@ export class PostsService {
         //2. call the file service to save files link to db
         if (uploadedCloudFiles.length > 0) {
           await this.fileService.saveFileRecordsToDB(
-            newPost.id,
+            user.id,
             uploadedCloudFiles,
             tx,
-            user.id,
+            newPost.id,
           );
         }
 
