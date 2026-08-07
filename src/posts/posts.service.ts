@@ -60,7 +60,11 @@ export class PostsService {
         body.status = PostStatus.PUBLISHED;
       }
     }
-
+    const category = await this.prismaService.category.findUnique({
+      where: { id: body.categoryId },
+    });
+    if (!category)
+      throw new BadRequestException('Please choose a category we provided');
     //try-catch upload files
     let uploadedCloudFiles: any[] = [];
     try {
@@ -111,6 +115,7 @@ export class PostsService {
         const publicIds = uploadedCloudFiles.map((file) => file.publicId);
         await this.fileService.deleteFilesFromCloud(publicIds);
       }
+      console.log('create post error: ', error);
       throw new InternalServerErrorException(
         'Create post failed, please try again',
       );
