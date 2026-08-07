@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Query,
@@ -101,5 +102,57 @@ export class PostsController {
     body: SharePostDto,
   ) {
     return this.postsService.sharePost(user, body, Number(originalPostId));
+  }
+
+  //group post handling
+  //get pending posts
+  @Get('/:groupId/pending')
+  @UseGuards(JwtAuthGuard)
+  async getPendingPosts(
+    @GetUser() user: JwtUser,
+    @Param('groupId', ParseIntPipe) groupId: number,
+  ) {
+    return this.postsService.getPendingPosts(user, groupId);
+  }
+  //approve post
+  @Patch('/approve/:groupId/:postId')
+  @UseGuards(JwtAuthGuard)
+  async approvePost(
+    @GetUser() user: JwtUser,
+    @Param('groupId', ParseIntPipe) groupId: number,
+    @Param('postId', ParseIntPipe) postId: number,
+  ) {
+    return this.postsService.approvePost(user, postId, groupId);
+  }
+  //reject post
+  @Patch('/reject/:groupId/:postId')
+  @UseGuards(JwtAuthGuard)
+  async rejectPost(
+    @GetUser() user: JwtUser,
+    @Param('groupId', ParseIntPipe) groupId: number,
+    @Param('postId', ParseIntPipe) postId: number,
+  ) {
+    return this.postsService.rejectPost(user, postId, groupId);
+  }
+
+  @Get()
+  @UseGuards(JwtAuthGuard)
+  async getAllGroupPosts(@GetUser() user: JwtUser, @Query() query: any) {
+    const { page, limit } = query;
+    return this.postsService.getGroupPosts(
+      user,
+      Number(page) || 1,
+      Number(limit) || 10,
+    );
+  }
+
+  @Delete('/group-post/:groupId/:postId')
+  @UseGuards(JwtAuthGuard)
+  async deleteGroupPost(
+    @GetUser() user: JwtUser,
+    @Param('groupId', ParseIntPipe) groupId: number,
+    @Param('postId', ParseIntPipe) postId: number,
+  ) {
+    return this.postsService.deleteGroupPost(user, postId, groupId);
   }
 }

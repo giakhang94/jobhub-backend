@@ -60,4 +60,9 @@ export class CreatePostDto {
   @IsOptional()
   @IsEnum(Privacy)
   privacy?: Privacy;
+
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsInt({ message: 'groupId phai la so nguyen' })
+  groupId?: number;
 }

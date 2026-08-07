@@ -11,7 +11,10 @@ import {
 import { CreatePostDto } from './dtos/create-post.dto.js';
 import { FileService } from '../file/file.service.js';
 import {
+  GroupPrivacy,
+  GroupRole,
   NotificationType,
+  PostStatus,
   Privacy,
   Role,
 } from '../../generated/prisma/enums.js';
@@ -19,6 +22,8 @@ import { UpdatePostDto } from './dtos/update-post.dto.js';
 import { SharePostDto } from './dtos/share-post.dto.js';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotificationEvents } from '../notification/events/notification.events.js';
+import { take } from 'rxjs';
+import { group } from 'console';
 
 @Injectable()
 export class PostsService {
@@ -33,6 +38,29 @@ export class PostsService {
     body: CreatePostDto,
     files: Express.Multer.File[],
   ) {
+    const userId = Number(user.id);
+    const groupId = Number(body.groupId);
+    //check if the creator is in the group
+
+    if (groupId) {
+      const userInGroup = await this.prismaService.groupMember.findUnique({
+        where: { userId_groupId: { userId, groupId } },
+        include: { group: true },
+      });
+      if (!userInGroup) {
+        throw new ForbiddenException('you are not in this group');
+      }
+      if (
+        userInGroup.group.requireApprove &&
+        userInGroup.role !== GroupRole.OWNER &&
+        userInGroup.role !== GroupRole.MODERATOR
+      ) {
+        body.status = PostStatus.PENDING;
+      } else {
+        body.status = PostStatus.PUBLISHED;
+      }
+    }
+
     //try-catch upload files
     let uploadedCloudFiles: any[] = [];
     try {
@@ -55,6 +83,8 @@ export class PostsService {
             content: body.content,
             categoryId: Number(body.categoryId),
             createdById: Number(user.id),
+            groupId: body.groupId ? Number(body.groupId) : null,
+            status: body.status,
           },
         });
         //2. call the file service to save files link to db
@@ -91,15 +121,11 @@ export class PostsService {
     const skip = limit * (page - 1);
     const includeComment = {
       where: { parentId: null },
+      take: 5,
       include: {
         file: true,
         user: { select: { id: true, fullname: true } },
-        replies: {
-          include: {
-            file: true,
-            user: { select: { id: true, fullname: true } },
-          },
-        },
+        _count: { select: { replies: true } },
       },
     };
     //for admin
@@ -118,6 +144,12 @@ export class PostsService {
                 },
                 files: true,
                 category: true,
+              },
+            },
+            _count: {
+              select: {
+                comments: true,
+                likes: true,
               },
             },
           },
@@ -172,6 +204,7 @@ export class PostsService {
           files: true,
           createdBy: true,
           comments: includeComment,
+          _count: { select: { comments: true, likes: true } },
           originalPost: {
             include: {
               createdBy: { select: { id: true, fullname: true, avatar: true } },
@@ -201,15 +234,11 @@ export class PostsService {
   async getAllPublicPostsForGuess(page: number, limit: number) {
     const includeComment = {
       where: { parentId: null },
+      take: 5,
       include: {
         file: true,
-        user: { select: { id: true, name: true } },
-        replies: {
-          include: {
-            file: true,
-            user: { select: { id: true, name: true } },
-          },
-        },
+        user: { select: { id: true, fullname: true } },
+        _count: { select: { replies: true } },
       },
     };
     const whereCondition = { privacy: Privacy.PUBLIC };
@@ -222,6 +251,7 @@ export class PostsService {
           category: true,
           createdBy: true,
           comments: includeComment,
+          _count: { select: { comments: true, likes: true } },
           originalPost: {
             include: {
               category: true,
@@ -245,15 +275,12 @@ export class PostsService {
   async getPostById(user: JwtUser, id: number) {
     const includeComment = {
       where: { parentId: null },
+      orderBy: { createdAt: 'desc' as const },
+      take: 10,
       include: {
         file: true,
-        user: { select: { id: true, name: true } },
-        replies: {
-          include: {
-            file: true,
-            user: { select: { id: true, name: true } },
-          },
-        },
+        user: { select: { id: true, fullname: true } },
+        _count: { select: { replies: true } },
       },
     };
     const role = user.role;
@@ -265,6 +292,7 @@ export class PostsService {
         createdBy: true,
         category: true,
         comments: includeComment,
+        _count: { select: { comments: true, likes: true } },
         originalPost: {
           include: {
             category: true,
@@ -470,6 +498,16 @@ export class PostsService {
       throw new NotFoundException(
         'The post you are sharing is not available or has been removed',
       );
+    if (originalPost.groupId) {
+      const group = await this.prismaService.group.findUnique({
+        where: { id: originalPost.groupId },
+      });
+      if (!group) throw new NotFoundException('group not found');
+      if (group.privacy === GroupPrivacy.PRIVATE)
+        throw new ForbiddenException(
+          'You can not share a post from a Private Group',
+        );
+    }
     const originalId = originalPost.originalPostId ?? originalPostId;
     const newSlug = `${originalPost.slug}-share-${Date.now()}`;
     const sharedPost = await this.prismaService.post.create({
@@ -508,5 +546,201 @@ export class PostsService {
     return {
       sharedPost,
     };
+  }
+
+  //group posts handling
+  //get pending post
+  async getPendingPosts(user: JwtUser, groupId: number) {
+    const userId = Number(user.id);
+    const userInGroup = await this.prismaService.groupMember.findUnique({
+      where: {
+        userId_groupId: {
+          userId,
+          groupId,
+        },
+      },
+    });
+    if (!userInGroup) throw new ForbiddenException('You are not in this group');
+    if (userInGroup.role !== GroupRole.OWNER && !userInGroup.canApprovePost) {
+      throw new ForbiddenException(
+        'You do not have permission to see pending posts',
+      );
+    }
+    return this.prismaService.post.findMany({
+      where: { groupId, status: PostStatus.PENDING },
+    });
+  }
+
+  //approve post
+  async approvePost(user: JwtUser, postId: number, groupId: number) {
+    const userId = Number(user.id);
+    const userInGroup = await this.prismaService.groupMember.findUnique({
+      where: {
+        userId_groupId: {
+          userId,
+          groupId,
+        },
+      },
+    });
+    if (!userInGroup) {
+      throw new ForbiddenException('You are not in this group');
+    }
+    const post = await this.prismaService.post.findUnique({
+      where: { id: postId },
+    });
+    if (!post)
+      throw new NotFoundException(
+        'Post not found or was rejected by other moderator',
+      );
+
+    if (post.groupId !== groupId) {
+      throw new ForbiddenException('This post does not belong to this group');
+    }
+    if (
+      post.status === PostStatus.PUBLISHED ||
+      post.status === PostStatus.REJECTED
+    ) {
+      throw new BadRequestException('This post has been approved or deleted');
+    }
+    if (userInGroup.role !== GroupRole.OWNER && !userInGroup.canApprovePost) {
+      throw new ForbiddenException(
+        'You do not have permission to approve posts',
+      );
+    }
+    return await this.prismaService.post.update({
+      where: {
+        id: postId,
+      },
+      data: { status: PostStatus.PUBLISHED },
+    });
+  }
+
+  //reject post
+  async rejectPost(user: JwtUser, postId: number, groupId: number) {
+    const userId = Number(user.id);
+    const userInGroup = await this.prismaService.groupMember.findUnique({
+      where: {
+        userId_groupId: {
+          userId,
+          groupId,
+        },
+      },
+    });
+    if (!userInGroup) throw new ForbiddenException('You are not in this group');
+    const post = await this.prismaService.post.findUnique({
+      where: { id: postId },
+    });
+    if (!post) throw new NotFoundException('Post not found');
+    if (post.groupId !== groupId)
+      throw new BadRequestException('This post does not belong to this group');
+    if (post.status !== PostStatus.PENDING) {
+      throw new BadRequestException('This post has already been processed');
+    }
+    if (userInGroup.role !== GroupRole.OWNER && !userInGroup.canApprovePost)
+      throw new ForbiddenException(
+        'You do not have permission to reject a post',
+      );
+    return this.prismaService.post.update({
+      where: { id: postId },
+      data: { status: PostStatus.REJECTED },
+    });
+  }
+
+  //get group posts
+  async getGroupPosts(user: JwtUser, groupId: number, page = 1, limit = 10) {
+    const skip = (page - 1) * limit;
+    const userId = Number(user.id);
+    const userInGroup = await this.prismaService.groupMember.findUnique({
+      where: { userId_groupId: { userId, groupId } },
+      include: { group: true },
+    });
+    const group = await this.prismaService.group.findUnique({
+      where: { id: groupId },
+    });
+    if (!group) throw new NotFoundException('group not exist');
+    if (!userInGroup && group?.privacy === GroupPrivacy.PRIVATE)
+      throw new ForbiddenException('Only member can see posts in this group');
+    const posts = await this.prismaService.post.findMany({
+      where: { groupId, status: PostStatus.PUBLISHED },
+      include: {
+        files: true,
+        comments: {
+          take: 5,
+          include: {
+            user: { select: { avatar: true, fullname: true, id: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+        createdBy: { select: { id: true, fullname: true, avatar: true } },
+        _count: {
+          select: {
+            comments: true,
+            likes: true,
+          },
+        },
+      },
+      orderBy: [{ createdAt: 'desc' }, { isPinned: 'desc' }],
+      skip,
+      take: limit,
+    });
+    const total = await this.prismaService.post.count({
+      where: { groupId, status: PostStatus.PUBLISHED },
+    });
+    const numOfPages = Math.ceil(total / limit);
+    return { posts, page, limit, total, numOfPages };
+  }
+
+  //toggle pin a post
+  async togglePinPost(user: JwtUser, groupId: number, postId: number) {
+    const userId = Number(user.id);
+    const userInGroup = await this.prismaService.groupMember.findUnique({
+      where: { userId_groupId: { userId, groupId } },
+    });
+    if (!userInGroup) throw new ForbiddenException('You are not in this group');
+    if (userInGroup.role !== GroupRole.OWNER && !userInGroup.canPinPost)
+      throw new ForbiddenException('You do not have permission to pin a post');
+    const post = await this.prismaService.post.findUnique({
+      where: { id: postId },
+    });
+    if (!post) throw new NotFoundException('Post not found');
+    if (post.status === PostStatus.PENDING)
+      throw new ForbiddenException('You have to approve this post first');
+    if (post.groupId !== groupId)
+      throw new BadRequestException('This post is not in this group');
+    const newIsPinned = post.isPinned ? false : true;
+    return this.prismaService.post.update({
+      where: { id: postId, groupId },
+      data: { isPinned: newIsPinned },
+    });
+  }
+
+  //delete group post
+  async deleteGroupPost(user: JwtUser, postId: number, groupId: number) {
+    const userId = Number(user.id);
+    const userInGroup = await this.prismaService.groupMember.findUnique({
+      where: {
+        userId_groupId: {
+          userId,
+          groupId,
+        },
+      },
+    });
+    const post = await this.prismaService.post.findUnique({
+      where: { id: postId },
+    });
+    if (!post) throw new NotFoundException('Post not found');
+    if (!userInGroup) throw new ForbiddenException('You are not in this group');
+    if (
+      userInGroup.role !== GroupRole.OWNER &&
+      !userInGroup.canDeletePost &&
+      post.createdById !== userId
+    )
+      throw new ForbiddenException(
+        'You have no permission to delete this post',
+      );
+    if (post.groupId !== groupId)
+      throw new ForbiddenException('this post does not belong to this group');
+
+    return this.prismaService.post.delete({ where: { id: postId, groupId } });
   }
 }
