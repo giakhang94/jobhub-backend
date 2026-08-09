@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 
 import { CreateUserDto } from './dtos/create-user.dto.js';
@@ -66,10 +67,16 @@ export class AuthService {
     const user = await this.prisma.user.findFirst({
       where: { emailVerificationToken: token },
     });
+
+    if (!user)
+      throw new NotFoundException('User chưa đăng ký tài khoản hoặc đã bị xóa');
+    if (!user?.emailVerificationTokenExpiry) {
+      throw new BadRequestException('Token không tôn tại');
+    }
     if (!user) {
       throw new BadRequestException('Token không hợp lệ');
     }
-    if (user.emailVerificationTokenExpiry! < date) {
+    if (user.emailVerificationTokenExpiry < date) {
       throw new BadRequestException('Token đã hết hạn');
     }
     const updatedUser = await this.prisma.user.update({
@@ -149,5 +156,57 @@ export class AuthService {
       this.configService,
     );
     return { message: 'access token has been refreshed successfully' };
+  }
+
+  //I used AI to create this method for saving time
+  //I only ask AI to create a whole method when I'm sure that I can write by myself without errors
+  // Resend verification email
+  async resendVerificationEmail(email: string) {
+    if (!email) {
+      throw new BadRequestException('Vui lòng cung cấp email');
+    }
+
+    // 1. Kiểm tra user có tồn tại không
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Email không tồn tại trong hệ thống');
+    }
+
+    // 2. Nếu tài khoản đã xác thực rồi thì không gửi lại
+    if (user.status === 'ACTIVE') {
+      throw new BadRequestException('Tài khoản này đã được xác thực trước đó');
+    }
+
+    // 3. Tạo token mới và tính lại hạn hết hiệu lực
+    const newVerificationToken = crypto.randomBytes(32).toString('hex');
+    const mailExpHours = Number(this.configService.get('MAIL_EXP', 24));
+
+    const newVerificationExpires = new Date(
+      Date.now() + mailExpHours * 60 * 60 * 1000,
+    );
+
+    // 4. Update thông tin token mới vào DB
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailVerificationToken: newVerificationToken,
+        emailVerificationTokenExpiry: newVerificationExpires,
+      },
+    });
+
+    // 5. Bắn email xác thực mới
+    await this.mailService.sendUserConfirmation(
+      user.email,
+      newVerificationToken,
+      user.fullname,
+    );
+
+    return {
+      message:
+        'Đã gửi lại email xác thực thành công. Vui lòng kiểm tra hòm thư!',
+    };
   }
 }
