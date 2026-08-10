@@ -1,10 +1,20 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 
 import { CreateUserDto } from '../auth/dtos/create-user.dto.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotificationEvents } from '../notification/events/notification.events.js';
-import { NotificationType } from '../../generated/prisma/enums.js';
+import {
+  GroupPrivacy,
+  GroupRole,
+  NotificationType,
+} from '../../generated/prisma/enums.js';
+import { JwtUser } from '@/auth/interfaces/jwt-user.interface.js';
 
 @Injectable()
 export class UsersService {
@@ -72,5 +82,28 @@ export class UsersService {
         },
       });
     }
+  }
+
+  //get all users in group
+  async getAllUserInGroup(user: JwtUser, groupId: number) {
+    const userId = Number(user.id);
+    const userInGroup = await this.prisma.groupMember.findUnique({
+      where: { userId_groupId: { userId, groupId } },
+      include: { group: true },
+    });
+    if (!userInGroup) throw new ForbiddenException('You are not in this group');
+    const group = userInGroup.group;
+    if (!group) throw new NotFoundException('group not found');
+    if (group.privacy === GroupPrivacy.PUBLIC) {
+      return this.prisma.groupMember.findMany({ where: { groupId } });
+    }
+    if (
+      userInGroup.role !== GroupRole.MODERATOR &&
+      userInGroup.role !== GroupRole.OWNER
+    )
+      throw new ForbiddenException(
+        'Only admin and moderator can see member list',
+      );
+    return this.prisma.groupMember.findMany({ where: { groupId } });
   }
 }

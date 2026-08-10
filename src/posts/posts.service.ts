@@ -22,8 +22,6 @@ import { UpdatePostDto } from './dtos/update-post.dto.js';
 import { SharePostDto } from './dtos/share-post.dto.js';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotificationEvents } from '../notification/events/notification.events.js';
-import { take } from 'rxjs';
-import { group } from 'console';
 
 @Injectable()
 export class PostsService {
