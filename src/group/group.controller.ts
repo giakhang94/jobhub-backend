@@ -40,7 +40,7 @@ export class GroupController {
     return this.groupService.getGroupById(groupId);
   }
 
-  @Post(':groupId/join')
+  @Post('join/:groupId')
   @HttpCode(HttpStatus.OK)
   async joinGroup(
     @GetUser() user: JwtUser,

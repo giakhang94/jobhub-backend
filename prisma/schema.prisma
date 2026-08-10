@@ -49,7 +49,9 @@ enum NotificationType {
   SHARE
   FOLLOW
   COMMENT
-  REPLY
+  REPLY 
+  GROUP_JOIN_REQUEST
+  GROUP_JOINED
 }
 
 //enum for group module

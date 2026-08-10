@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { NotificationEvents } from './events/notification.events.js';
+import { it } from 'node:test';
 
 export interface CrateNotificationDto {
   senderId: number;
@@ -32,6 +33,31 @@ export class NotificationService {
         type: payload.type,
         postId: payload.postId ?? null,
       },
+    });
+  }
+  @OnEvent('notifications.createMany')
+  async handleNotificationsEvent(payload: NotificationEvents[]) {
+    //check if the payload array is empty
+    if (
+      !payload ||
+      (payload && !Array.isArray(payload)) ||
+      payload.length === 0
+    ) {
+      return null;
+    }
+    //map the instance array to a plain object
+    const notificationsData = payload
+      .filter((item) => item.senderId !== item.receiverId)
+      .map((item) => ({
+        senderId: item.senderId,
+        receiverId: item.receiverId,
+        type: item.type,
+        postId: item.postId ?? null,
+      }));
+
+    if (notificationsData.length === 0) return null;
+    return this.prismaService.notification.createMany({
+      data: notificationsData,
     });
   }
 

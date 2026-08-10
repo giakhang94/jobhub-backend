@@ -13,13 +13,19 @@ import {
   GroupPrivacy,
   GroupRole,
   JoinRequestStatus,
+  NotificationType,
 } from '../../generated/prisma/enums.js';
 import { UpdateMemberPermissionsDto } from './dto/update-member-permission.dto.js';
 import { GROUP_CONFIG } from './constants/group.constant.js';
+import { NotificationEvents } from '../notification/events/notification.events.js';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()
 export class GroupService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
   //create a new group
   async createGroup(user: JwtUser, body: CreateGroupDto) {
@@ -57,6 +63,17 @@ export class GroupService {
     });
     if (!group) throw new NotFoundException('Group not found or was deleted');
 
+    //day danh sanh owner va nguoi phe duyet de gui thong thong bao
+    const approvers = await this.prismaService.groupMember.findMany({
+      where: {
+        groupId,
+        OR: [{ role: GroupRole.OWNER }, { canApproveMember: true }],
+      },
+      select: { userId: true },
+    });
+    const approverIds = approvers.filter((approver) => {
+      return approver.userId !== userId;
+    });
     //kiem tra xem user co o trong group chua?
     const UserInGroup = await this.prismaService.groupMember.findUnique({
       where: {
@@ -83,14 +100,41 @@ export class GroupService {
       throw new BadRequestException('You have sent join request to this group');
 
     if (group.privacy === GroupPrivacy.PUBLIC) {
-      return this.prismaService.groupMember.create({
+      const newMember = await this.prismaService.groupMember.create({
         data: { userId, groupId },
       });
+
+      //trigger a notification
+      if (newMember) {
+        const notificationData = approverIds.map(
+          (approverId) =>
+            new NotificationEvents({
+              senderId: userId,
+              type: NotificationType.GROUP_JOINED,
+              receiverId: approverId.userId,
+            }),
+        );
+        this.eventEmitter.emit('notifications.createMany', notificationData);
+      }
+      return newMember;
     }
+
     //sau nay update code cho phep gui lai join request o day
-    return this.prismaService.joinRequest.create({
+    const newMember = await this.prismaService.joinRequest.create({
       data: { userId, groupId, requestStatus: JoinRequestStatus.PENDING },
     });
+    if (newMember) {
+      const notificationData = approverIds.map(
+        (approverId) =>
+          new NotificationEvents({
+            senderId: userId,
+            type: NotificationType.GROUP_JOIN_REQUEST,
+            receiverId: approverId.userId,
+          }),
+      );
+      this.eventEmitter.emit('notifications.createMany', notificationData);
+    }
+    return newMember;
   }
 
   //getGroupById
