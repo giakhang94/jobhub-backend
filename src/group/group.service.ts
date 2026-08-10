@@ -538,6 +538,7 @@ export class GroupService {
         'notification.create',
         new NotificationEvents({
           senderId: userId,
+          groupId,
           receiverId: targetUserId,
           type: NotificationType.GROUP_PERMISSION_UPDATED,
         }),
