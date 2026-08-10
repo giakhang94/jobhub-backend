@@ -78,7 +78,7 @@ export class PostsService {
 
     //try-catch 2: transaction save records to db
     try {
-      return await this.prismaService.$transaction(async (tx) => {
+      const result = await this.prismaService.$transaction(async (tx) => {
         //1. create new post
         const newPost = await tx.post.create({
           data: {
@@ -110,6 +110,30 @@ export class PostsService {
           },
         });
       });
+
+      //trigger notification
+      if (result) {
+        //get all approver
+        const postApprovers = await this.prismaService.groupMember.findMany({
+          where: {
+            groupId,
+            OR: [{ role: GroupRole.OWNER }, { canApprovePost: true }],
+          },
+        });
+        const approverIds = postApprovers.filter(
+          (approver) => approver.userId !== userId,
+        );
+        const NotificationData = approverIds.map((approverId) => {
+          return new NotificationEvents({
+            senderId: userId,
+            receiverId: approverId.userId,
+            type: NotificationType.GROUP_POST_PENDING_REQUEST,
+            groupId,
+          });
+        });
+        this.eventEmitter.emit('notifications.createMany', NotificationData);
+      }
+      return result;
     } catch (error) {
       if (uploadedCloudFiles.length > 0) {
         const publicIds = uploadedCloudFiles.map((file) => file.publicId);
@@ -592,6 +616,7 @@ export class PostsService {
     }
     const post = await this.prismaService.post.findUnique({
       where: { id: postId },
+      include: { createdBy: { select: { id: true } } },
     });
     if (!post)
       throw new NotFoundException(
@@ -612,12 +637,25 @@ export class PostsService {
         'You do not have permission to approve posts',
       );
     }
-    return await this.prismaService.post.update({
+    const approvedPost = await this.prismaService.post.update({
       where: {
         id: postId,
       },
       data: { status: PostStatus.PUBLISHED },
     });
+    if (approvedPost) {
+      this.eventEmitter.emit(
+        'notification.create',
+        new NotificationEvents({
+          senderId: userId,
+          postId,
+          groupId,
+          type: NotificationType.GROUP_POST_APPROVE,
+          receiverId: post.createdById,
+        }),
+      );
+    }
+    return approvedPost;
   }
 
   //reject post

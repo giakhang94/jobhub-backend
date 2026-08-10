@@ -7,7 +7,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { NotificationEvents } from './events/notification.events.js';
-import { it } from 'node:test';
 
 export interface CrateNotificationDto {
   senderId: number;
@@ -32,6 +31,7 @@ export class NotificationService {
         receiverId: payload.receiverId,
         type: payload.type,
         postId: payload.postId ?? null,
+        groupId: payload.groupId ?? null,
       },
     });
   }
@@ -53,6 +53,7 @@ export class NotificationService {
         receiverId: item.receiverId,
         type: item.type,
         postId: item.postId ?? null,
+        groupId: item.groupId ?? null,
       }));
 
     if (notificationsData.length === 0) return null;
