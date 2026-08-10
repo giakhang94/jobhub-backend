@@ -14,6 +14,8 @@ import { CommentModule } from './comment/comment.module.js';
 import { NotificationModule } from './notification/notification.module.js';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { GroupModule } from './group/group.module.js';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { SerializerInterceptor } from './users/interceptors/serializer.interceptor.js';
 
 @Module({
   imports: [
@@ -32,6 +34,9 @@ import { GroupModule } from './group/group.module.js';
     GroupModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    { provide: APP_INTERCEPTOR, useClass: SerializerInterceptor },
+  ],
 })
 export class AppModule {}

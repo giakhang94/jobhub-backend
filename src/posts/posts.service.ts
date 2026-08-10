@@ -22,8 +22,6 @@ import { UpdatePostDto } from './dtos/update-post.dto.js';
 import { SharePostDto } from './dtos/share-post.dto.js';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotificationEvents } from '../notification/events/notification.events.js';
-import { take } from 'rxjs';
-import { group } from 'console';
 
 @Injectable()
 export class PostsService {
@@ -60,7 +58,11 @@ export class PostsService {
         body.status = PostStatus.PUBLISHED;
       }
     }
-
+    const category = await this.prismaService.category.findUnique({
+      where: { id: body.categoryId },
+    });
+    if (!category)
+      throw new BadRequestException('Please choose a category we provided');
     //try-catch upload files
     let uploadedCloudFiles: any[] = [];
     try {
@@ -74,7 +76,7 @@ export class PostsService {
 
     //try-catch 2: transaction save records to db
     try {
-      return await this.prismaService.$transaction(async (tx) => {
+      const result = await this.prismaService.$transaction(async (tx) => {
         //1. create new post
         const newPost = await tx.post.create({
           data: {
@@ -90,10 +92,10 @@ export class PostsService {
         //2. call the file service to save files link to db
         if (uploadedCloudFiles.length > 0) {
           await this.fileService.saveFileRecordsToDB(
-            newPost.id,
+            user.id,
             uploadedCloudFiles,
             tx,
-            user.id,
+            newPost.id,
           );
         }
 
@@ -106,11 +108,36 @@ export class PostsService {
           },
         });
       });
+
+      //trigger notification
+      if (result) {
+        //get all approver
+        const postApprovers = await this.prismaService.groupMember.findMany({
+          where: {
+            groupId,
+            OR: [{ role: GroupRole.OWNER }, { canApprovePost: true }],
+          },
+        });
+        const approverIds = postApprovers.filter(
+          (approver) => approver.userId !== userId,
+        );
+        const NotificationData = approverIds.map((approverId) => {
+          return new NotificationEvents({
+            senderId: userId,
+            receiverId: approverId.userId,
+            type: NotificationType.GROUP_POST_PENDING_REQUEST,
+            groupId,
+          });
+        });
+        this.eventEmitter.emit('notifications.createMany', NotificationData);
+      }
+      return result;
     } catch (error) {
       if (uploadedCloudFiles.length > 0) {
         const publicIds = uploadedCloudFiles.map((file) => file.publicId);
         await this.fileService.deleteFilesFromCloud(publicIds);
       }
+      console.log('create post error: ', error);
       throw new InternalServerErrorException(
         'Create post failed, please try again',
       );
@@ -512,7 +539,7 @@ export class PostsService {
     const newSlug = `${originalPost.slug}-share-${Date.now()}`;
     const sharedPost = await this.prismaService.post.create({
       data: {
-        content: body.content,
+        content: body.content || '',
         title: originalPost.title,
         slug: newSlug,
         originalPostId: originalId,
@@ -587,6 +614,7 @@ export class PostsService {
     }
     const post = await this.prismaService.post.findUnique({
       where: { id: postId },
+      include: { createdBy: { select: { id: true } } },
     });
     if (!post)
       throw new NotFoundException(
@@ -607,12 +635,25 @@ export class PostsService {
         'You do not have permission to approve posts',
       );
     }
-    return await this.prismaService.post.update({
+    const approvedPost = await this.prismaService.post.update({
       where: {
         id: postId,
       },
       data: { status: PostStatus.PUBLISHED },
     });
+    if (approvedPost) {
+      this.eventEmitter.emit(
+        'notification.create',
+        new NotificationEvents({
+          senderId: userId,
+          postId,
+          groupId,
+          type: NotificationType.GROUP_POST_APPROVE,
+          receiverId: post.createdById,
+        }),
+      );
+    }
+    return approvedPost;
   }
 
   //reject post

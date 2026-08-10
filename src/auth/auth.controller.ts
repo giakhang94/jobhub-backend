@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   Res,
   UseGuards,
 } from '@nestjs/common';
@@ -28,7 +29,7 @@ export class AuthController {
   }
 
   @Get('verify-email')
-  async verifyEmail(@Param('token') token: string) {
+  async verifyEmail(@Query('token') token: string) {
     const date = new Date(Date.now());
     return this.authService.verifyEmail(token, date);
   }
@@ -58,5 +59,11 @@ export class AuthController {
   async getMe(@GetUser() user: JwtUser) {
     console.log('me working');
     return user;
+  }
+
+  //resend verification email
+  @Post('resend-verification')
+  async resendVerification(@Body('email') email: string) {
+    return this.authService.resendVerificationEmail(email);
   }
 }

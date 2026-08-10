@@ -30,6 +30,7 @@ export class FileService {
     commentId?: number,
   ) {
     if (!filesData || filesData.length === 0) return;
+
     if (!commentId)
       return tx.file.createMany({
         data: filesData.map((file) => ({

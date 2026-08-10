@@ -5,6 +5,7 @@ export class NotificationEvents {
   receiverId!: number;
   postId?: number;
   type!: NotificationType;
+  groupId?: number;
 
   constructor(partial: Partial<NotificationEvents>) {
     Object.assign(this, partial);

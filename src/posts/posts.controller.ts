@@ -99,7 +99,7 @@ export class PostsController {
   async sharePost(
     @GetUser() user: JwtUser,
     @Param('originalPostId') originalPostId: string,
-    body: SharePostDto,
+    @Body() body: SharePostDto,
   ) {
     return this.postsService.sharePost(user, body, Number(originalPostId));
   }
