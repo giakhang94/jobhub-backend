@@ -517,7 +517,7 @@ export class PostsService {
     const newSlug = `${originalPost.slug}-share-${Date.now()}`;
     const sharedPost = await this.prismaService.post.create({
       data: {
-        content: body.content,
+        content: body.content || '',
         title: originalPost.title,
         slug: newSlug,
         originalPostId: originalId,
