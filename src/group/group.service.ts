@@ -278,8 +278,22 @@ export class GroupService {
         await tx.groupMember.create({
           data: { userId: targetUserId, groupId },
         });
+        //delete this joinRequest
+        await tx.joinRequest.delete({
+          where: { userId_groupId: { userId: targetUserId, groupId } },
+        });
         return { message: 'approved' };
       });
+      if (result) {
+        this.eventEmitter.emit(
+          'notification.create',
+          new NotificationEvents({
+            senderId: userId,
+            receiverId: targetUserId,
+            type: NotificationType.GROUP_JOIN_REQUEST_APPROVED,
+          }),
+        );
+      }
       return result;
     } catch (error) {
       console.log('approve member error', error);
@@ -440,7 +454,7 @@ export class GroupService {
     if (member.role === GroupRole.OWNER) {
       throw new ForbiddenException('Owner can not be kicked');
     }
-    return this.prismaService.groupMember.delete({
+    const kickedMember = await this.prismaService.groupMember.delete({
       where: {
         userId_groupId: {
           groupId,
@@ -448,9 +462,22 @@ export class GroupService {
         },
       },
     });
+
+    if (kickedMember) {
+      this.eventEmitter.emit(
+        'notification.create',
+        new NotificationEvents({
+          senderId: userId,
+          receiverId: memberId,
+          type: NotificationType.GROUP_KICKED,
+          groupId,
+        }),
+      );
+    }
+
+    return kickedMember;
   }
 
-  //update user permission (modified by AI)
   async updateMemberPermission(
     user: JwtUser,
     targetUserId: number,
@@ -494,7 +521,8 @@ export class GroupService {
         'the number of Moderators reach the limit. Please remove one to add a new one',
       );
     }
-    return this.prismaService.groupMember.update({
+
+    const updatedMember = await this.prismaService.groupMember.update({
       where: {
         userId_groupId: {
           userId: targetUserId,
@@ -503,8 +531,23 @@ export class GroupService {
       },
       data: body,
     });
+
+    // 💥 TRIGGER NOTIFICATION: Báo cho targetUser biết quyền hạn đã được thay đổi
+    if (userId !== targetUserId) {
+      this.eventEmitter.emit(
+        'notification.create',
+        new NotificationEvents({
+          senderId: userId,
+          receiverId: targetUserId,
+          type: NotificationType.GROUP_PERMISSION_UPDATED,
+        }),
+      );
+    }
+
+    return updatedMember;
   }
-  //transfer role
+
+  // transfer role (develop by me and and some logic by AI for saving time)
   async transferOwnerShip(
     user: JwtUser,
     groupId: number,
@@ -555,10 +598,25 @@ export class GroupService {
 
     // TRƯỜNG HỢP 1: Chưa đầy Owner -> Thêm thẳng
     if (ownerNumber < GROUP_CONFIG.MAX_OWNERS) {
-      return this.prismaService.groupMember.update({
+      const updatedTarget = await this.prismaService.groupMember.update({
         where: { userId_groupId: { userId: targetUserId, groupId } },
         data: { role: GroupRole.OWNER },
       });
+
+      // 💥 TRIGGER NOTIFICATION: Báo cho targetUser đã lên OWNER
+      if (userId !== targetUserId) {
+        this.eventEmitter.emit(
+          'notification.create',
+          new NotificationEvents({
+            senderId: userId,
+            receiverId: targetUserId,
+            type: NotificationType.GROUP_OWNERSHIP_TRANSFERRED,
+            groupId,
+          }),
+        );
+      }
+
+      return updatedTarget;
     }
 
     // TRƯỜNG HỢP 2: Đã đầy Owner -> Bắt buộc hạ 1 Owner
@@ -579,7 +637,7 @@ export class GroupService {
     }
 
     try {
-      return await this.prismaService.$transaction(async (tx) => {
+      const result = await this.prismaService.$transaction(async (tx) => {
         // Nếu giáng Owner xuống MODERATOR mà danh sách Mod đã đầy -> Hạ 1 Mod xuống MEMBER trước
         if (
           ownerNewRole === GroupRole.MODERATOR &&
@@ -619,8 +677,50 @@ export class GroupService {
           data: { role: GroupRole.OWNER },
         });
       });
+
+      // 💥 TRIGGER NOTIFICATIONS SAU KHÍ TRANSACTION THÀNH CÔNG:
+
+      // 1. Thông báo cho Target User (lên OWNER)
+      if (userId !== targetUserId) {
+        this.eventEmitter.emit(
+          'notification.create',
+          new NotificationEvents({
+            senderId: userId,
+            receiverId: targetUserId,
+            type: NotificationType.GROUP_OWNERSHIP_TRANSFERRED,
+            groupId,
+          }),
+        );
+      }
+
+      // 2. Thông báo cho Owner bị giáng cấp (nếu người bị giáng cấp không phải chính người thao tác)
+      if (userId !== ownerForRemoveId) {
+        this.eventEmitter.emit(
+          'notification.create',
+          new NotificationEvents({
+            senderId: userId,
+            receiverId: ownerForRemoveId,
+            type: NotificationType.GROUP_PERMISSION_UPDATED,
+            groupId,
+          }),
+        );
+      }
+
+      // 3. Thông báo cho Mod bị giáng xuống Member (nếu có)
+      if (modToBeRemovedId && userId !== modToBeRemovedId) {
+        this.eventEmitter.emit(
+          'notification.create',
+          new NotificationEvents({
+            senderId: userId,
+            receiverId: modToBeRemovedId,
+            type: NotificationType.GROUP_PERMISSION_UPDATED,
+            groupId,
+          }),
+        );
+      }
+
+      return result;
     } catch (error) {
-      // FIX LỖI: Nếu là HttpException (BadRequest, NotFound...) thì quăng lại nguyên vẹn
       if (error instanceof HttpException) {
         throw error;
       }

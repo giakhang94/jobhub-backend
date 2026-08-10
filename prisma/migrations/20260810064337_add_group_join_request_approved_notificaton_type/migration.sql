@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "NotificationType" ADD VALUE 'GROUP_JOIN_REQUEST_APPROVED';

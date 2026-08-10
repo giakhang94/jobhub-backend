@@ -52,6 +52,10 @@ enum NotificationType {
   REPLY 
   GROUP_JOIN_REQUEST
   GROUP_JOINED
+  GROUP_JOIN_REQUEST_APPROVED
+  GROUP_KICKED
+  GROUP_PERMISSION_UPDATED
+  GROUP_OWNERSHIP_TRANSFERRED
 }
 
 //enum for group module
@@ -236,11 +240,13 @@ model Notification {
   receiverId Int
   type NotificationType
   postId Int?
+  groupId Int?
   commentId Int?
   isRead Boolean @default(false)
   createdAt DateTime @default(now())
 
   //1-N relations
+  group Group? @relation("GroupNotification", fields: [groupId], references: [id], onDelete: Cascade)
   sender User @relation("Sender", fields: [senderId],  references: [id], onDelete: Cascade)
   receiver User @relation("Receiver", fields: [receiverId], references: [id], onDelete: Cascade)
   post  Post?   @relation("PostNotification", fields: [postId], references: [id], onDelete: Cascade)
@@ -260,6 +266,7 @@ model Group {
 
   //relation
   posts Post[] @relation("PostsInGroup")
+  notification Notification[] @relation("GroupNotification")
   groupMembers GroupMember[] @relation("GroupBelongsUser")
   joinRequests JoinRequest[] @relation("JoinRequest")
 }
